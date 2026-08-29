@@ -4,6 +4,7 @@ import {
   isGeminiModel,
   isOpenAIModel,
   isSupportedAspectRatio,
+  imageSizesForModel,
   supportsImageSize,
   SUPPORTED_ASPECT_RATIOS,
 } from './models';
@@ -28,4 +29,6 @@ test('image-size capabilities match each provider model', () => {
   assert.equal(supportsImageSize('gemini-3.1-flash-image', '4K'), true);
   assert.equal(supportsImageSize('gpt-image-1.5', '2K'), false);
   assert.equal(supportsImageSize('gpt-image-2', '4K'), true);
+  assert.deepEqual(imageSizesForModel('gemini-3.1-flash-lite-image'), ['1K']);
+  assert.deepEqual(imageSizesForModel('gemini-3.1-flash-image'), ['1K', '2K', '4K']);
 });

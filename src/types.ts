@@ -19,6 +19,5 @@ export interface BatchItem {
 export interface Preset {
   name: string;
   prompt: string;
-  ratio: string;
   isCustom?: boolean;
 }

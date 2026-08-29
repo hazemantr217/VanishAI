@@ -4,7 +4,9 @@ export type CredentialMode = 'managed' | 'byok';
 
 export interface RuntimeConfig {
   geminiCredentialMode: CredentialMode;
+  googleOnlyMode: boolean;
   openaiAvailable: boolean;
+  geminiImageBillingRequired: boolean;
   maxBatchConcurrency: number;
 }
 

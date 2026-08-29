@@ -30,6 +30,16 @@ export const serverConfig = {
   requestBodyLimit: requestBodyLimit(process.env.REQUEST_BODY_LIMIT),
 };
 
+// AI Studio injects GEMINI_API_KEY automatically. In that managed mode the app
+// deliberately stays Google-only, even if an unrelated OpenAI secret exists.
+export function isGoogleManagedRuntime(): boolean {
+  return Boolean(serverConfig.managedGeminiApiKey);
+}
+
+export function isOpenAIEnabled(): boolean {
+  return !isGoogleManagedRuntime() && Boolean(serverConfig.managedOpenAIApiKey);
+}
+
 function readSecretHeader(req: Request, headerName: string): string | null {
   const rawValue = req.header(headerName)?.trim();
   if (!rawValue || rawValue.length > MAX_API_KEY_LENGTH || /[\r\n]/.test(rawValue)) {
@@ -43,5 +53,6 @@ export function resolveGeminiApiKey(req: Request): string | null {
 }
 
 export function resolveOpenAIApiKey(req: Request): string | null {
+  if (!isOpenAIEnabled()) return null;
   return serverConfig.managedOpenAIApiKey || readSecretHeader(req, 'x-openai-api-key');
 }

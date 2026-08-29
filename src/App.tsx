@@ -12,7 +12,7 @@ import { v4 as uuidv4 } from 'uuid';
 import type { BatchItem, Preset } from './types';
 import type { RuntimeConfig } from './shared/api';
 import type { AspectRatio, ImageModel, ImageSize } from './shared/models';
-import { GEMINI_IMAGE_MODELS, isOpenAIModel, isSupportedAspectRatio, supportsImageSize } from './shared/models';
+import { GEMINI_IMAGE_MODELS, imageSizesForModel, isOpenAIModel, isSupportedAspectRatio, supportsImageSize } from './shared/models';
 import { clearSessionGeminiApiKey, getRuntimeConfig, hasSessionGeminiApiKey, requestBatchMerge, requestInpaint, setSessionGeminiApiKey } from './services/api';
 import { dataUrlExtension, filesToBatchItems, filenameForDataUrl, lockPixelsOutsideMask, toPngDataUrl } from './lib/images';
 import { mapWithConcurrency } from './lib/concurrency';
@@ -96,10 +96,10 @@ export default function App() {
   const lightboxItem = items.find(i => i.id === lightboxItemId);
   const lightboxItemIdx = items.findIndex(i => i.id === lightboxItemId);
   const [appMode, setAppMode] = useState<'vanish' | 'reimagine'>('vanish');
-  const [aspectRatio, setAspectRatio] = useState<string>(() => {
+  const [aspectRatio, setAspectRatio] = useState<AspectRatio>(() => {
     try {
       const saved = localStorage.getItem('vanishai_aspect_ratio');
-      if (saved) {
+      if (saved && isSupportedAspectRatio(saved)) {
         return saved;
       }
     } catch (e) {
@@ -150,7 +150,9 @@ export default function App() {
       if (error instanceof Error && error.name === 'AbortError') return;
       setRuntimeConfig({
         geminiCredentialMode: 'byok',
+        googleOnlyMode: false,
         openaiAvailable: false,
+        geminiImageBillingRequired: true,
         maxBatchConcurrency: 2,
       });
       setRuntimeConfigError('تعذر قراءة إعدادات الخادم. أعد تحميل الصفحة إذا استمرت المشكلة.');
@@ -350,7 +352,6 @@ export default function App() {
     const newPreset: Preset = {
       name: name.trim(),
       prompt: promptText.trim(),
-      ratio: "original",
       isCustom: true
     };
     setPresets(prev => {
@@ -795,7 +796,6 @@ export default function App() {
       : item.originalImage;
 
     if (!ensureCredentials()) throw new Error('أدخل مفتاح Gemini API للمتابعة.');
-    const normalizedAspectRatio: AspectRatio = isSupportedAspectRatio(aspectRatio) ? aspectRatio : 'original';
     const response = await requestInpaint({
       maskedImage: base64ImageToSend,
       originalImage: originalImageToSend,
@@ -806,7 +806,7 @@ export default function App() {
       maskColor: item.maskedImage ? maskColor : undefined,
       model: selectedModel,
       appMode,
-      aspectRatio: normalizedAspectRatio,
+      aspectRatio,
       imageSize,
       enableOutpainting,
       outpaintPreserve2D,
@@ -853,12 +853,11 @@ export default function App() {
     }
 
     if (!ensureCredentials()) throw new Error('أدخل مفتاح Gemini API للمتابعة.');
-    const normalizedAspectRatio: AspectRatio = isSupportedAspectRatio(aspectRatio) ? aspectRatio : 'original';
     const response = await requestBatchMerge({
       images,
       prompt: userPrompt,
       model: selectedModel,
-      aspectRatio: normalizedAspectRatio,
+      aspectRatio,
       imageSize,
       similarityLevel,
     }, signal || abortControllerRef.current?.signal);
@@ -1264,8 +1263,8 @@ export default function App() {
             onChange={(e) => setSelectedModel(e.target.value as ImageModel)}
             className="bg-neutral-950 border border-neutral-800 hover:border-neutral-700 text-white text-[10px] md:text-xs rounded-lg px-2 py-1 md:px-2.5 md:py-1.5 outline-none focus:border-purple-500 transition-all font-sans cursor-pointer min-w-[130px] sm:min-w-[170px]"
           >
-            <option value="gemini-3.1-flash-lite-image">🍌 Nano Banana 2 Lite</option>
-            <option value="gemini-3.1-flash-image">🍌 Nano Banana 2</option>
+            <option value="gemini-3.1-flash-lite-image">🍌 Nano Banana 2 Lite · Paid · 1K</option>
+            <option value="gemini-3.1-flash-image">🍌 Nano Banana 2 · Paid</option>
             {runtimeConfig?.openaiAvailable && (
               <optgroup label="OpenAI">
                 <option value="gpt-image-1.5">OpenAI GPT Image 1.5</option>
@@ -1279,9 +1278,9 @@ export default function App() {
             className="rounded-lg border border-neutral-800 bg-neutral-950 px-2 py-1 text-[10px] text-white outline-none transition hover:border-neutral-700 focus:border-purple-500"
             title="دقة الصورة الناتجة"
           >
-            <option value="1K">1K</option>
-            <option value="2K" disabled={!supportsImageSize(selectedModel, '2K')}>2K</option>
-            <option value="4K" disabled={!supportsImageSize(selectedModel, '4K')}>4K</option>
+            {imageSizesForModel(selectedModel).map((size) => (
+              <option key={size} value={size}>{size}</option>
+            ))}
           </select>
         </div>
 
@@ -1392,6 +1391,12 @@ export default function App() {
           </div>
         </div>
       </header>
+
+      {runtimeConfig?.geminiCredentialMode === 'managed' && runtimeConfig.geminiImageBillingRequired && (
+        <div className="border-b border-amber-500/20 bg-amber-500/10 px-4 py-1.5 text-center text-[10px] font-bold text-amber-200" dir="rtl">
+          مفتاح AI Studio متصل تلقائيًا، لكن توليد الصور يحتاج مشروع Google مدفوعًا ومفعّلًا عليه Billing؛ Lite يدعم 1K فقط وFlash يدعم 1K/2K/4K.
+        </div>
+      )}
 
       <div className="flex-1 flex flex-col lg:flex-row overflow-hidden relative">
         {/* Toolbar */}

@@ -44,7 +44,7 @@ npm run check
 NODE_ENV=production PORT=8080 npm start
 ```
 
-The included multi-stage `Dockerfile` builds a non-root production image suitable for Cloud Run. The server honors `PORT`, exposes `/api/health`, validates request bodies, rate-limits APIs, rejects cross-origin mutations, propagates client cancellation to providers, and returns sanitized errors with request IDs.
+The included multi-stage `Dockerfile` builds a non-root production image suitable for Cloud Run. The server honors `PORT`, exposes `/api/health`, validates request bodies, uploads images as binary multipart data, rate-limits APIs, rejects cross-origin mutations, propagates client cancellation to providers, and returns sanitized errors with request IDs.
 
 Configuration:
 
@@ -55,7 +55,7 @@ Configuration:
 | `PORT` | `3000` | HTTP port; Cloud Run normally injects `8080`. |
 | `MAX_BATCH_CONCURRENCY` | `2` | Client-advertised batch concurrency, clamped to 1–4. |
 | `API_RATE_LIMIT_MAX` | `40` | API requests per IP in each 10-minute window. |
-| `REQUEST_BODY_LIMIT` | `75mb` | Express JSON limit, clamped to a safe maximum. |
+| `REQUEST_BODY_LIMIT` | `75mb` | Express JSON limit for metadata and legacy clients; image uploads use bounded multipart files. |
 
 ## Quality and safety checks
 

@@ -50,3 +50,7 @@ export function supportsImageSize(model: ImageModel, imageSize: ImageSize): bool
   }
   return true;
 }
+
+export function imageSizesForModel(model: ImageModel): readonly ImageSize[] {
+  return SUPPORTED_IMAGE_SIZES.filter((size) => supportsImageSize(model, size));
+}

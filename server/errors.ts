@@ -24,16 +24,28 @@ export function isQuotaError(error: unknown): boolean {
 export function isAuthenticationError(error: unknown): boolean {
   if (typeof error === 'object' && error !== null) {
     const status = 'status' in error ? Number(error.status) : 0;
-    if (status === 401 || status === 403) return true;
+    if (status === 401) return true;
   }
   const value = error instanceof Error ? `${error.name} ${error.message}` : String(error);
-  return /(?:invalid api key|api.?key.?invalid|unauthenticated|authentication|permission.?denied)/i.test(value);
+  return /(?:invalid api key|api.?key.?invalid|unauthenticated|authentication failed)/i.test(value);
+}
+
+export function isAccessDeniedError(error: unknown): boolean {
+  if (typeof error === 'object' && error !== null) {
+    const status = 'status' in error ? Number(error.status) : 0;
+    if (status === 403) return true;
+  }
+  const value = error instanceof Error ? `${error.name} ${error.message}` : String(error);
+  return /(?:permission.?denied|access.?denied|billing|paid tier|not available.*free tier)/i.test(value);
 }
 
 export function publicErrorMessage(error: unknown): string {
   if (error instanceof ApiError) return error.message;
   if (isAuthenticationError(error)) {
     return 'مفتاح API غير صالح أو لا يملك صلاحية استخدام الموديل المختار.';
+  }
+  if (isAccessDeniedError(error)) {
+    return 'موديلات Gemini للصور تتطلب Paid Tier. فعّل Billing للمشروع المرتبط بمفتاح AI Studio ثم أعد المحاولة.';
   }
   if (isQuotaError(error)) {
     return 'تم تجاوز حصة الاستخدام أو حد سرعة الطلبات. جرّب لاحقًا أو استخدم مفتاحًا له حصة متاحة.';

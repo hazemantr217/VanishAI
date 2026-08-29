@@ -75,6 +75,7 @@ async function apiRequest<T>(
 ): Promise<T> {
   const headers = new Headers(init.headers);
   headers.set('Accept', 'application/json');
+  headers.set('X-Vanish-Request', '1');
 
   if (options.includeGeminiKey) {
     const apiKey = readSessionKey();
@@ -115,10 +116,21 @@ export async function requestInpaint(
   payload: InpaintRequest,
   signal?: AbortSignal,
 ): Promise<ImageResultResponse> {
+  const { originalImage, maskedImage, dalleMaskImage, ...metadata } = payload;
+  const formData = new FormData();
+  formData.set('metadata', JSON.stringify(metadata));
+  const [originalBlob, maskedBlob, dalleMaskBlob] = await Promise.all([
+    imageUrlToBlob(originalImage),
+    imageUrlToBlob(maskedImage),
+    dalleMaskImage ? imageUrlToBlob(dalleMaskImage) : null,
+  ]);
+  formData.set('originalImage', originalBlob, filenameForBlob('original', originalBlob));
+  formData.set('maskedImage', maskedBlob, filenameForBlob('masked', maskedBlob));
+  if (dalleMaskBlob) formData.set('dalleMaskImage', dalleMaskBlob, filenameForBlob('mask', dalleMaskBlob));
+
   return apiRequest<ImageResultResponse>('/api/inpaint', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload),
+    body: formData,
     signal,
   }, { includeGeminiKey: true, retryRateLimit: true });
 }
@@ -127,10 +139,28 @@ export async function requestBatchMerge(
   payload: MergeBatchRequest,
   signal?: AbortSignal,
 ): Promise<ImageResultResponse> {
+  const { images, ...metadata } = payload;
+  const formData = new FormData();
+  formData.set('metadata', JSON.stringify(metadata));
+  const blobs = await Promise.all(images.map(imageUrlToBlob));
+  blobs.forEach((blob, index) => {
+    formData.append('images', blob, filenameForBlob(`image-${index + 1}`, blob));
+  });
+
   return apiRequest<ImageResultResponse>('/api/merge-batch', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload),
+    body: formData,
     signal,
   }, { includeGeminiKey: true, retryRateLimit: true });
+}
+
+async function imageUrlToBlob(imageUrl: string): Promise<Blob> {
+  const response = await fetch(imageUrl);
+  if (!response.ok) throw new Error('تعذر تجهيز الصورة للرفع.');
+  return response.blob();
+}
+
+function filenameForBlob(stem: string, blob: Blob): string {
+  const extension = blob.type === 'image/png' ? 'png' : blob.type === 'image/webp' ? 'webp' : 'jpg';
+  return `${stem}.${extension}`;
 }

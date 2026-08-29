@@ -40,23 +40,37 @@ export function enforceSameOrigin(req: Request, res: Response, next: NextFunctio
     return;
   }
 
+  if (req.header('x-vanish-request') !== '1') {
+    res.status(403).json({
+      error: 'تحقق الطلب الأمني مفقود.',
+      code: 'REQUEST_MARKER_REQUIRED',
+    });
+    return;
+  }
+
+  const fetchSite = req.header('sec-fetch-site');
+  if (fetchSite === 'cross-site') {
+    res.status(403).json({
+      error: 'تم رفض طلب من مصدر خارجي.',
+      code: 'CROSS_SITE_REQUEST',
+    });
+    return;
+  }
+
   const origin = req.header('origin');
   if (!origin) {
-    if (process.env.NODE_ENV === 'production' && req.header('sec-fetch-site') !== 'same-origin') {
-      res.status(403).json({
-        error: 'يلزم إرسال الطلب من واجهة التطبيق نفسها.',
-        code: 'MISSING_REQUEST_ORIGIN',
-      });
-      return;
-    }
     next();
     return;
   }
 
   try {
-    const expectedHost = req.get('host');
     const originHost = new URL(origin).host;
-    if (!expectedHost || originHost !== expectedHost) {
+    const forwardedHosts = (req.header('x-forwarded-host') || '')
+      .split(',')
+      .map((host) => host.trim())
+      .filter(Boolean);
+    const expectedHosts = new Set([req.get('host'), req.hostname, ...forwardedHosts].filter(Boolean));
+    if (originHost && !expectedHosts.has(originHost)) {
       res.status(403).json({
         error: 'تم رفض طلب من مصدر مختلف.',
         code: 'CROSS_ORIGIN_REQUEST',

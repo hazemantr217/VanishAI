@@ -31,7 +31,9 @@ test('health and runtime config expose no credentials', async () => {
     assert.equal(configResponse.status, 200);
     const config = await configResponse.json() as Record<string, unknown>;
     assert.equal(config.geminiCredentialMode, 'byok');
+    assert.equal(config.googleOnlyMode, false);
     assert.equal(config.openaiAvailable, false);
+    assert.equal(config.geminiImageBillingRequired, true);
     assert.equal(typeof config.maxBatchConcurrency, 'number');
     assert.equal(JSON.stringify(config).includes('API_KEY'), false);
   });
@@ -44,6 +46,7 @@ test('mutating API routes reject cross-origin requests', async () => {
       headers: {
         'content-type': 'application/json',
         origin: 'https://attacker.example',
+        'x-vanish-request': '1',
       },
       body: '{}',
     });
@@ -53,11 +56,29 @@ test('mutating API routes reject cross-origin requests', async () => {
   });
 });
 
+test('AI Studio forwarded preview host passes the same-origin guard', async () => {
+  await withTestServer(async (baseUrl) => {
+    const response = await fetch(`${baseUrl}/api/inpaint`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        origin: 'https://preview.example',
+        'x-forwarded-host': 'preview.example',
+        'x-vanish-request': '1',
+      },
+      body: '{}',
+    });
+
+    assert.equal(response.status, 400);
+    assert.equal((await response.json() as { code: string }).code, 'INVALID_REQUEST');
+  });
+});
+
 test('inpaint validates payloads before calling a provider', async () => {
   await withTestServer(async (baseUrl) => {
     const response = await fetch(`${baseUrl}/api/inpaint`, {
       method: 'POST',
-      headers: { 'content-type': 'application/json' },
+      headers: { 'content-type': 'application/json', 'x-vanish-request': '1' },
       body: JSON.stringify({ model: 'gemini-3.1-flash-image' }),
     });
 
@@ -66,11 +87,38 @@ test('inpaint validates payloads before calling a provider', async () => {
   });
 });
 
+test('multipart uploads enforce the selected model resolution', async () => {
+  await withTestServer(async (baseUrl) => {
+    const tinyPng = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M/wHwAF/gL+XzSQSQAAAABJRU5ErkJggg==', 'base64');
+    const formData = new FormData();
+    formData.set('metadata', JSON.stringify({
+      prompt: '',
+      model: 'gemini-3.1-flash-lite-image',
+      appMode: 'reimagine',
+      aspectRatio: 'original',
+      imageSize: '2K',
+    }));
+    formData.set('originalImage', new Blob([tinyPng], { type: 'image/png' }), 'original.png');
+    formData.set('maskedImage', new Blob([tinyPng], { type: 'image/png' }), 'masked.png');
+
+    const response = await fetch(`${baseUrl}/api/inpaint`, {
+      method: 'POST',
+      headers: { 'x-vanish-request': '1' },
+      body: formData,
+    });
+
+    assert.equal(response.status, 400);
+    const payload = await response.json() as { code: string; error: string };
+    assert.equal(payload.code, 'INVALID_REQUEST');
+    assert.match(payload.error, /1K/);
+  });
+});
+
 test('malformed JSON returns a sanitized JSON error', async () => {
   await withTestServer(async (baseUrl) => {
     const response = await fetch(`${baseUrl}/api/inpaint`, {
       method: 'POST',
-      headers: { 'content-type': 'application/json' },
+      headers: { 'content-type': 'application/json', 'x-vanish-request': '1' },
       body: '{',
     });
 

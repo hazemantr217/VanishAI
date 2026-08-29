@@ -1,12 +1,13 @@
 import { randomUUID } from 'node:crypto';
 import express, { type NextFunction, type Request, type Response } from 'express';
 import { ZodError } from 'zod';
-import { serverConfig, resolveGeminiApiKey, resolveOpenAIApiKey } from './config';
-import { ApiError, isAbortError, isAuthenticationError, isQuotaError, publicErrorMessage } from './errors';
+import { serverConfig, isGoogleManagedRuntime, isOpenAIEnabled, resolveGeminiApiKey, resolveOpenAIApiKey } from './config';
+import { ApiError, isAbortError, isAccessDeniedError, isAuthenticationError, isQuotaError, publicErrorMessage } from './errors';
 import { createRequestAbortController } from './request-abort';
 import { inpaintRequestSchema, mergeBatchRequestSchema } from './validation';
 import { editWithGemini, mergeWithGemini, verifyGeminiKey } from './providers/gemini';
 import { editWithOpenAI } from './providers/openai';
+import { inpaintBody, inpaintUploadMiddleware, mergeBody, mergeUploadMiddleware } from './multipart';
 import { isGeminiModel, isOpenAIModel } from '../src/shared/models';
 
 export const apiRouter = express.Router();
@@ -26,7 +27,9 @@ apiRouter.get('/health', (_req, res) => {
 apiRouter.get('/runtime-config', (_req, res) => {
   res.json({
     geminiCredentialMode: serverConfig.managedGeminiApiKey ? 'managed' : 'byok',
-    openaiAvailable: Boolean(serverConfig.managedOpenAIApiKey),
+    googleOnlyMode: isGoogleManagedRuntime(),
+    openaiAvailable: isOpenAIEnabled(),
+    geminiImageBillingRequired: true,
     maxBatchConcurrency: serverConfig.maxBatchConcurrency,
   });
 });
@@ -49,10 +52,10 @@ apiRouter.post('/credentials/verify', async (req, res, next) => {
   }
 });
 
-apiRouter.post('/inpaint', async (req, res, next) => {
+apiRouter.post('/inpaint', inpaintUploadMiddleware, async (req, res, next) => {
   const requestAbort = createRequestAbortController(req, res);
   try {
-    const input = inpaintRequestSchema.parse(req.body);
+    const input = inpaintRequestSchema.parse(inpaintBody(req));
     let resultImage: string;
 
     if (isGeminiModel(input.model)) {
@@ -62,6 +65,9 @@ apiRouter.post('/inpaint', async (req, res, next) => {
       }
       resultImage = await editWithGemini(apiKey, input, requestAbort.signal);
     } else if (isOpenAIModel(input.model)) {
+      if (!isOpenAIEnabled()) {
+        throw new ApiError(400, 'موديلات OpenAI معطلة في وضع Google AI Studio.', 'OPENAI_DISABLED');
+      }
       const apiKey = resolveOpenAIApiKey(req);
       if (!apiKey) {
         throw new ApiError(401, 'مفتاح OpenAI غير مضبوط على الخادم.', 'OPENAI_KEY_REQUIRED');
@@ -81,10 +87,10 @@ apiRouter.post('/inpaint', async (req, res, next) => {
   }
 });
 
-apiRouter.post('/merge-batch', async (req, res, next) => {
+apiRouter.post('/merge-batch', mergeUploadMiddleware, async (req, res, next) => {
   const requestAbort = createRequestAbortController(req, res);
   try {
-    const input = mergeBatchRequestSchema.parse(req.body);
+    const input = mergeBatchRequestSchema.parse(mergeBody(req));
     if (!isGeminiModel(input.model)) {
       throw new ApiError(400, 'دمج الباتش متاح حاليًا مع موديلات Gemini فقط.', 'UNSUPPORTED_MODEL');
     }
@@ -135,6 +141,8 @@ apiRouter.use((error: unknown, _req: Request, res: Response, _next: NextFunction
     ? error.status
     : isAuthenticationError(error)
       ? 401
+      : isAccessDeniedError(error)
+        ? 403
       : isQuotaError(error)
         ? 429
         : 500;
@@ -142,6 +150,8 @@ apiRouter.use((error: unknown, _req: Request, res: Response, _next: NextFunction
     ? error.code
     : isAuthenticationError(error)
       ? 'API_KEY_INVALID'
+      : isAccessDeniedError(error)
+        ? 'MODEL_ACCESS_DENIED'
       : isQuotaError(error)
         ? 'QUOTA_EXCEEDED'
         : 'PROCESSING_FAILED';
