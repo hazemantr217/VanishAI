@@ -1,39 +1,36 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Upload, Image as ImageIcon, Eraser, Move, Download, Loader2, Undo, Redo, Settings2, Crop as CropIcon, Trash2, Eye, History, Square, Wand2, Database, X, Pencil, Check, ChevronUp, ChevronDown, StopCircle, Archive, RotateCcw, FileArchive, FolderArchive, Clock, Layers, Save, CheckCircle, Sparkles, RefreshCw, CheckCircle2, AlertCircle, KeyRound, ShieldCheck } from 'lucide-react';
 import CanvasWorkspace from './components/CanvasWorkspace';
 import CropModal from './components/CropModal';
-import BatchCard from './components/BatchCard';
+import BatchGrid from './components/BatchGrid';
 import ImageLightbox from './components/ImageLightbox';
 import AspectRatioSelector from './components/AspectRatioSelector';
 import ApiKeyDialog from './components/ApiKeyDialog';
+import ArchiveSidebar from './components/ArchiveSidebar';
 import { cn } from './lib/utils';
 import { v4 as uuidv4 } from 'uuid';
-import type { BatchItem, Preset } from './types';
-import type { RuntimeConfig } from './shared/api';
+import type { BatchItem } from './types';
 import type { AspectRatio, ImageModel, ImageSize } from './shared/models';
-import { GEMINI_IMAGE_MODELS, imageSizesForModel, isOpenAIModel, isSupportedAspectRatio, supportsImageSize } from './shared/models';
-import { clearSessionGeminiApiKey, getRuntimeConfig, hasSessionGeminiApiKey, requestBatchMerge, requestInpaint, setSessionGeminiApiKey } from './services/api';
-import { dataUrlExtension, filesToBatchItems, filenameForDataUrl, lockPixelsOutsideMask, toPngDataUrl } from './lib/images';
-import { mapWithConcurrency } from './lib/concurrency';
-import { acceptItemResult, redoItem, undoItem } from './lib/items';
-import { DEFAULT_PRESETS } from './data/default-presets';
+import { GEMINI_IMAGE_MODELS, imageSizesForModel, isSupportedAspectRatio, supportsImageSize } from './shared/models';
+import { filesToBatchItems, filenameForDataUrl } from './lib/images';
+import { acceptItemResult, applyImageEdit, redoItem, undoItem } from './lib/items';
+import { useManagedImageLifecycle } from './hooks/useManagedImageLifecycle';
+import { useRuntimeCredentials } from './hooks/useRuntimeCredentials';
+import { usePresets } from './hooks/usePresets';
+import { usePersistentWorkspace } from './hooks/usePersistentWorkspace';
+import { useImageProcessor } from './hooks/useImageProcessor';
 import { 
-  initializeDatabase, 
-  saveAllItems, 
   loadAllSessions, 
   saveWorkSession, 
   deleteWorkSession, 
   clearAllWorkSessions, 
   clearDatabase,
-  MAX_ARCHIVE_CAPACITY,
-  MAX_SESSIONS_COUNT,
-  WorkSession 
+  type WorkSession,
 } from './lib/db';
 
 export default function App() {
   const [items, setItems] = useState<BatchItem[]>([]);
-  const [isDbLoaded, setIsDbLoaded] = useState(false);
   const [activeItemId, setActiveItemId] = useState<string | null>(null);
   const activeItem = items.find(i => i.id === activeItemId);
   const [tool, setTool] = useState<'brush' | 'eraser' | 'pan' | 'rect' | 'wand'>('brush');
@@ -83,15 +80,22 @@ export default function App() {
   const [similarityLevel, setSimilarityLevel] = useState<'high' | 'medium' | 'low'>('high');
   const [generateDiverseVariants, setGenerateDiverseVariants] = useState(false);
   const [showBrushPanel, setShowBrushPanel] = useState(false);
-  const [isProcessing, setIsProcessing] = useState(false);
   const [showCropModal, setShowCropModal] = useState(false);
   const [clearTrigger, setClearTrigger] = useState(0);
   const [isDragging, setIsDragging] = useState(false);
   const [isComparing, setIsComparing] = useState(false);
-  const [runtimeConfig, setRuntimeConfig] = useState<RuntimeConfig | null>(null);
-  const [runtimeConfigError, setRuntimeConfigError] = useState('');
-  const [showApiKeyDialog, setShowApiKeyDialog] = useState(false);
-  const [hasUserApiKey, setHasUserApiKey] = useState(() => hasSessionGeminiApiKey());
+  const {
+    runtimeConfig,
+    runtimeConfigError,
+    setRuntimeConfigError,
+    showApiKeyDialog,
+    setShowApiKeyDialog,
+    hasUserApiKey,
+    requiresUserApiKey,
+    ensureCredentials,
+    handleSaveApiKey,
+    handleForgetApiKey,
+  } = useRuntimeCredentials();
   const [lightboxItemId, setLightboxItemId] = useState<string | null>(null);
   const lightboxItem = items.find(i => i.id === lightboxItemId);
   const lightboxItemIdx = items.findIndex(i => i.id === lightboxItemId);
@@ -116,16 +120,21 @@ export default function App() {
     }
   }, [aspectRatio]);
   const [showSidebar, setShowSidebar] = useState(true);
-  const [dbItems, setDbItems] = useState<BatchItem[]>([]);
-  const [sessions, setSessions] = useState<WorkSession[]>([]);
   const [archiveTab, setArchiveTab] = useState<'sessions' | 'images'>('sessions');
   const [currentSessionId, setCurrentSessionId] = useState<string>(() => 'session_' + Date.now());
   const currentSessionCreatedAtRef = useRef<number>(Date.now());
+  const { dbItems, setDbItems, sessions, setSessions } = usePersistentWorkspace(
+    items,
+    currentSessionId,
+    currentSessionCreatedAtRef,
+  );
   const [showDbSidebar, setShowDbSidebar] = useState(false);
   const [showReimagineSidebar, setShowReimagineSidebar] = useState(true);
   const [showVanishAdvanced, setShowVanishAdvanced] = useState(false);
   const [showVanishSystemSettings, setShowVanishSystemSettings] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  useManagedImageLifecycle(items, dbItems, sessions);
 
   const [quickPreviewImage, setQuickPreviewImage] = useState<string | null>(null);
   const longPressTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -135,67 +144,29 @@ export default function App() {
   const [isZipDownloading, setIsZipDownloading] = useState(false);
   const [zipProgress, setZipProgress] = useState<number>(0);
   const [showDownloadMenu, setShowDownloadMenu] = useState(false);
-  const abortControllerRef = useRef<AbortController | null>(null);
-  const isAbortedRef = useRef<boolean>(false);
-
-  useEffect(() => {
-    const controller = new AbortController();
-    void getRuntimeConfig(controller.signal).then((config) => {
-      setRuntimeConfig(config);
-      setRuntimeConfigError('');
-      if (config.geminiCredentialMode === 'byok' && !hasSessionGeminiApiKey()) {
-        setShowApiKeyDialog(true);
-      }
-    }).catch((error) => {
-      if (error instanceof Error && error.name === 'AbortError') return;
-      setRuntimeConfig({
-        geminiCredentialMode: 'byok',
-        googleOnlyMode: false,
-        openaiAvailable: false,
-        geminiImageBillingRequired: true,
-        maxBatchConcurrency: 2,
-      });
-      setRuntimeConfigError('تعذر قراءة إعدادات الخادم. أعد تحميل الصفحة إذا استمرت المشكلة.');
-      if (!hasSessionGeminiApiKey()) setShowApiKeyDialog(true);
-    });
-    return () => controller.abort();
-  }, []);
-
-  const requiresUserApiKey = runtimeConfig?.geminiCredentialMode === 'byok';
-
-  const ensureCredentials = () => {
-    if (requiresUserApiKey && !hasSessionGeminiApiKey()) {
-      setShowApiKeyDialog(true);
-      return false;
-    }
-    return true;
-  };
-
-  const handleSaveApiKey = (apiKey: string) => {
-    setSessionGeminiApiKey(apiKey);
-    setHasUserApiKey(true);
-    setShowApiKeyDialog(false);
-  };
-
-  const handleForgetApiKey = () => {
-    clearSessionGeminiApiKey();
-    setHasUserApiKey(false);
-    if (requiresUserApiKey) setShowApiKeyDialog(true);
-  };
-
-  const handleForceStop = () => {
-    isAbortedRef.current = true;
-    if (abortControllerRef.current) {
-      abortControllerRef.current.abort();
-      abortControllerRef.current = null;
-    }
-    setIsProcessing(false);
-    // Reset processing items back to pending, and remove any temporary incomplete merged item
-    setItems(prev => prev
-      .filter(i => !(i.id.startsWith('merged-') && i.status === 'processing'))
-      .map(i => i.status === 'processing' ? { ...i, status: 'pending', errorMessage: undefined } : i)
-    );
-  };
+  const { isProcessing, processImage, processAll, handleForceStop } = useImageProcessor({
+    items,
+    setItems,
+    runtimeConfig,
+    setRuntimeConfigError,
+    ensureCredentials,
+    handleForgetApiKey,
+    appMode,
+    selectedModel,
+    imageSize,
+    aspectRatio,
+    prompt,
+    maskColor,
+    enableOutpainting,
+    outpaintPreserve2D,
+    similarityLevel,
+    generateDiverseVariants,
+    vanishEnableMultiVariant,
+    vanishVariantsCount,
+    batchEnableMultiVariant,
+    batchVariantsCount,
+    enableBatchMerge,
+  });
 
   const handleItemPressStart = (e: any, itemOriginalImage: string) => {
     isLongPressActiveRef.current = false;
@@ -258,215 +229,29 @@ export default function App() {
 
   const [activeStepIndex, setActiveStepIndex] = useState(0);
 
-  const [presets, setPresets] = useState<Preset[]>(() => {
-    const saved = localStorage.getItem('vanishai_all_presets');
-    const defaultPresets = DEFAULT_PRESETS;
-    if (saved) {
-      try {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          // Merge missing defaults if not present
-          const existingNames = new Set(parsed.map(p => p.name));
-          const missingDefaults = defaultPresets.filter(dp => !existingNames.has(dp.name));
-          if (missingDefaults.length > 0) {
-            const merged = [...missingDefaults, ...parsed];
-            localStorage.setItem('vanishai_all_presets', JSON.stringify(merged));
-            return merged;
-          }
-          return parsed;
-        }
-      } catch (e) {
-        console.error("Error loading presets:", e);
-      }
-    }
-    return defaultPresets;
-  });
-
-  const [newPresetName, setNewPresetName] = useState('');
-  const [newPresetPrompt, setNewPresetPrompt] = useState('');
-  const [showAddPresetForm, setShowAddPresetForm] = useState(false);
-  const [showAddPresetFormSidebar, setShowAddPresetFormSidebar] = useState(false);
-
-  // Preset editing state
-  const [editingPresetIndex, setEditingPresetIndex] = useState<number | null>(null);
-  const [editingPresetName, setEditingPresetName] = useState('');
-  const [editingPresetPrompt, setEditingPresetPrompt] = useState('');
-
-  // Derived active preset & prompt title
-  const matchedPreset = presets.find(p => p.prompt.trim() === prompt.trim());
-  const activePreset = selectedPresetName
-    ? (presets.find(p => p.name === selectedPresetName && p.prompt.trim() === prompt.trim()) || matchedPreset)
-    : matchedPreset;
-
-  const activePromptTitle = activePreset
-    ? activePreset.name
-    : (prompt.trim() ? "✨ البرومبت المخصص" : "✍️ تخصيص البرومبت والنمط");
-
-  const handleStartEditPreset = (index: number, e: React.MouseEvent) => {
-    e.stopPropagation();
-    setEditingPresetIndex(index);
-    setEditingPresetName(presets[index].name);
-    setEditingPresetPrompt(presets[index].prompt);
-  };
-
-  const handleSaveEditPreset = (index: number) => {
-    if (!editingPresetName.trim() || !editingPresetPrompt.trim()) return;
-    setPresets(prev => {
-      const updated = [...prev];
-      updated[index] = {
-        ...updated[index],
-        name: editingPresetName.trim(),
-        prompt: editingPresetPrompt.trim(),
-      };
-      localStorage.setItem('vanishai_all_presets', JSON.stringify(updated));
-      return updated;
-    });
-    setEditingPresetIndex(null);
-    setEditingPresetName('');
-    setEditingPresetPrompt('');
-  };
-
-  const handleCancelEditPreset = () => {
-    setEditingPresetIndex(null);
-    setEditingPresetName('');
-    setEditingPresetPrompt('');
-  };
-
-  const handleMovePreset = (index: number, direction: 'up' | 'down', e: React.MouseEvent) => {
-    e.stopPropagation();
-    const targetIndex = direction === 'up' ? index - 1 : index + 1;
-    if (targetIndex < 0 || targetIndex >= presets.length) return;
-
-    setPresets(prev => {
-      const updated = [...prev];
-      const temp = updated[index];
-      updated[index] = updated[targetIndex];
-      updated[targetIndex] = temp;
-      localStorage.setItem('vanishai_all_presets', JSON.stringify(updated));
-      return updated;
-    });
-  };
-
-  const handleAddPreset = (name: string, promptText: string) => {
-    if (!name.trim() || !promptText.trim()) return;
-    const newPreset: Preset = {
-      name: name.trim(),
-      prompt: promptText.trim(),
-      isCustom: true
-    };
-    setPresets(prev => {
-      const updated = [...prev, newPreset];
-      localStorage.setItem('vanishai_all_presets', JSON.stringify(updated));
-      return updated;
-    });
-    setNewPresetName('');
-    setNewPresetPrompt('');
-    setShowAddPresetForm(false);
-    setShowAddPresetFormSidebar(false);
-  };
-
-  const handleDeletePreset = (index: number) => {
-    setPresets(prev => {
-      const updated = prev.filter((_, i) => i !== index);
-      localStorage.setItem('vanishai_all_presets', JSON.stringify(updated));
-      return updated;
-    });
-    if (editingPresetIndex === index) {
-      handleCancelEditPreset();
-    }
-  };
-
-  const handleResetPresets = () => {
-    if (window.confirm("هل أنت متأكد من رغبتك في استعادة قائمة الأنماط الافتراضية وحذف الأنماط المضافة؟")) {
-      localStorage.removeItem('vanishai_all_presets');
-      setPresets(DEFAULT_PRESETS);
-      handleCancelEditPreset();
-    }
-  };
-
-  // Load saved items and work sessions from database on startup
-  useEffect(() => {
-    const initDatabaseState = async () => {
-      try {
-        const { items: loadedItems, sessions: loadedSessions } = await initializeDatabase();
-        if (loadedItems && loadedItems.length > 0) {
-          const baseTime = Date.now();
-          const loadedWithTime = loadedItems.map((item, idx) => ({
-            ...item,
-            createdAt: item.createdAt ?? (baseTime - idx * 1000)
-          }));
-          setDbItems(loadedWithTime as any);
-        }
-        if (loadedSessions && loadedSessions.length > 0) {
-          setSessions(loadedSessions);
-        }
-      } catch (err) {
-        console.error("Error initializing persistent database:", err);
-      } finally {
-        setIsDbLoaded(true);
-      }
-    };
-    initDatabaseState();
-  }, []);
-
-  // Debounced incremental persistence keeps large image writes off the hot render path.
-  useEffect(() => {
-    if (!isDbLoaded) return;
-
-    if (dbItems.length > MAX_ARCHIVE_CAPACITY) {
-      setDbItems(prev => prev.slice(0, MAX_ARCHIVE_CAPACITY));
-      return;
-    }
-
-    const timer = window.setTimeout(() => {
-      void saveAllItems(dbItems).catch((error) => {
-        console.error('Failed to persist the image archive:', error);
-      });
-    }, 500);
-    return () => window.clearTimeout(timer);
-  }, [dbItems, isDbLoaded]);
-
-  // Automatically add or update active session items inside the database archive (up to 100 images)
-  useEffect(() => {
-    if (!isDbLoaded || items.length === 0) return;
-
-    setDbItems((previousItems) => {
-      const activeIds = new Set(items.map((item) => item.id));
-      return [
-        ...items,
-        ...previousItems.filter((item) => !activeIds.has(item.id)),
-      ].slice(0, MAX_ARCHIVE_CAPACITY);
-    });
-  }, [items, isDbLoaded]);
-
-  // Auto-save the active work session snapshot (keeping up to last 5 sessions, auto-expires in 3 days)
-  useEffect(() => {
-    if (!isDbLoaded || items.length === 0) return;
-
-    const timer = setTimeout(async () => {
-      try {
-        const previewThumbnails = items.slice(0, 4).map(i => i.resultImage || i.originalImage);
-        const sessionObj: WorkSession = {
-          id: currentSessionId,
-          name: `جلسة عمل (${items.length} صورة)`,
-          createdAt: currentSessionCreatedAtRef.current || Date.now(),
-          updatedAt: Date.now(),
-          itemCount: items.length,
-          completedCount: items.filter(i => i.status === 'completed').length,
-          previewThumbnails,
-          items: items
-        };
-
-        await saveWorkSession(sessionObj);
-        const updated = await loadAllSessions();
-        setSessions(updated);
-      } catch (e) {
-        console.error("Failed to auto-save work session:", e);
-      }
-    }, 1000);
-
-    return () => clearTimeout(timer);
-  }, [items, isDbLoaded, currentSessionId]);
+  const {
+    presets,
+    newPresetName,
+    setNewPresetName,
+    newPresetPrompt,
+    setNewPresetPrompt,
+    showAddPresetFormSidebar,
+    setShowAddPresetFormSidebar,
+    editingPresetIndex,
+    editingPresetName,
+    setEditingPresetName,
+    editingPresetPrompt,
+    setEditingPresetPrompt,
+    activePreset,
+    activePromptTitle,
+    handleStartEditPreset,
+    handleSaveEditPreset,
+    handleCancelEditPreset,
+    handleMovePreset,
+    handleAddPreset,
+    handleDeletePreset,
+    handleResetPresets,
+  } = usePresets(prompt, selectedPresetName);
 
   const handleDeleteFromDb = (id: string, e?: React.MouseEvent) => {
     if (e) {
@@ -705,7 +490,7 @@ export default function App() {
     setClearTrigger(c => c + 1);
   };
 
-  const handleDeleteItem = (id: string, e?: React.MouseEvent) => {
+  const handleDeleteItem = useCallback((id: string, e?: React.MouseEvent) => {
     if (e) e.stopPropagation();
     const wasActive = activeItemId === id;
     setItems(prev => {
@@ -719,7 +504,7 @@ export default function App() {
       }
       return filtered;
     });
-  };
+  }, [activeItemId]);
 
   const handleDragOver = (e: React.DragEvent) => {
     e.preventDefault();
@@ -752,7 +537,7 @@ export default function App() {
     }
   };
 
-  const handleMaskChange = (dataUrl: string, dalleMaskUrl?: string, maskOverlayUrl?: string) => {
+  const handleMaskChange = useCallback((dataUrl: string, dalleMaskUrl?: string, maskOverlayUrl?: string) => {
     if (activeItemId) {
       setItems(prev => prev.map(item => 
         item.id === activeItemId ? {
@@ -764,305 +549,25 @@ export default function App() {
         } : item
       ));
     }
-  };
+  }, [activeItemId]);
 
   const handleCropComplete = (croppedImageUrl: string) => {
     if (activeItemId) {
-      setItems(prev => prev.map(item => 
-        item.id === activeItemId ? { 
-          ...item, 
-          editHistory: [...item.editHistory, item.originalImage],
-          originalImage: croppedImageUrl, 
-          maskedImage: null, 
-          dalleMaskImage: null,
-          maskOverlayImage: null,
-          resultImage: null,
-          redoEditHistory: [],
-          status: 'pending',
-        } : item
-      ));
+      setItems((previous) => previous.map((item) => (
+        item.id === activeItemId ? applyImageEdit(item, croppedImageUrl) : item
+      )));
     }
     setShowCropModal(false);
   };
 
-  const generateSingleVariant = async (item: BatchItem, index: number, signal?: AbortSignal): Promise<string> => {
-    if (isAbortedRef.current || signal?.aborted) {
-      throw new Error("ABORTED");
-    }
-
-    const base64ImageToSend = (appMode === 'reimagine' && !item.maskedImage) ? item.originalImage : (item.maskedImage || item.originalImage);
-    const originalImageToSend = isOpenAIModel(selectedModel) && item.dalleMaskImage
-      ? await toPngDataUrl(item.originalImage)
-      : item.originalImage;
-
-    if (!ensureCredentials()) throw new Error('أدخل مفتاح Gemini API للمتابعة.');
-    const response = await requestInpaint({
-      maskedImage: base64ImageToSend,
-      originalImage: originalImageToSend,
-      dalleMaskImage: item.dalleMaskImage,
-      prompt: prompt.trim()
-        ? (generateDiverseVariants ? `${prompt.trim()} (variation ${index + 1})` : prompt.trim())
-        : '',
-      maskColor: item.maskedImage ? maskColor : undefined,
-      model: selectedModel,
-      appMode,
-      aspectRatio,
-      imageSize,
-      enableOutpainting,
-      outpaintPreserve2D,
-      similarityLevel,
-    }, signal || abortControllerRef.current?.signal);
-
-    if (
-      appMode === 'vanish' &&
-      !enableOutpainting &&
-      item.dalleMaskImage &&
-      !signal?.aborted &&
-      !isAbortedRef.current
-    ) {
-      return lockPixelsOutsideMask(item.originalImage, response.resultImage, item.dalleMaskImage);
-    }
-    return response.resultImage;
-  };
-
-  const generateBatchMerge = async (images: string[], userPrompt: string, signal?: AbortSignal): Promise<string> => {
-    if (isAbortedRef.current || signal?.aborted) {
-      throw new Error("ABORTED");
-    }
-
-    if (images.length > 14) {
-      const chunks: string[][] = [];
-      for (let index = 0; index < images.length; index += 12) {
-        chunks.push(images.slice(index, index + 12));
-      }
-      const intermediate = await mapWithConcurrency(chunks, 1, (chunk) =>
-        generateBatchMerge(
-          chunk,
-          `${userPrompt}\nCreate a faithful intermediate group that preserves every supplied product for a later final merge.`,
-          signal,
-        ),
-      );
-      const successful = intermediate
-        .filter((result): result is PromiseFulfilledResult<string> => result.status === 'fulfilled')
-        .map((result) => result.value);
-      if (successful.length !== chunks.length) {
-        const failed = intermediate.find((result): result is PromiseRejectedResult => result.status === 'rejected');
-        throw failed?.reason || new Error('فشل الدمج المرحلي للباتش الكبير.');
-      }
-      return generateBatchMerge(successful, userPrompt, signal);
-    }
-
-    if (!ensureCredentials()) throw new Error('أدخل مفتاح Gemini API للمتابعة.');
-    const response = await requestBatchMerge({
-      images,
-      prompt: userPrompt,
-      model: selectedModel,
-      aspectRatio,
-      imageSize,
-      similarityLevel,
-    }, signal || abortControllerRef.current?.signal);
-    return response.resultImage;
-  };
-
-  const processImage = async (item: BatchItem) => {
-    if (isAbortedRef.current) return;
-    if (appMode === 'vanish' && !item.maskedImage) return;
-    if (appMode === 'reimagine' && !item.originalImage) return;
-    
-    setItems(prev => prev.map(i => i.id === item.id ? { ...i, status: 'processing', errorMessage: undefined } : i));
-    
-    try {
-      const isBatch = (appMode as string) === 'reimagine';
-      const useMulti = isBatch ? batchEnableMultiVariant : vanishEnableMultiVariant;
-      const count = useMulti ? (isBatch ? batchVariantsCount : vanishVariantsCount) : 1;
-      const currentSignal = abortControllerRef.current?.signal;
-      const variantIndexes = Array.from({ length: count }, (_value, index) => index);
-      const results = await mapWithConcurrency(
-        variantIndexes,
-        isBatch ? 1 : Math.min(2, runtimeConfig?.maxBatchConcurrency || 2),
-        (variantIndex) => item.inputImages && item.inputImages.length > 1
-          ? generateBatchMerge(item.inputImages, prompt, currentSignal)
-          : generateSingleVariant(item, variantIndex, currentSignal),
-      );
-      if (isAbortedRef.current || currentSignal?.aborted) {
-        setItems(prev => prev.map(i => i.id === item.id ? { ...i, status: 'pending', errorMessage: undefined } : i));
-        return;
-      }
-
-      const successfulVariants = results
-        .filter((r): r is PromiseFulfilledResult<string> => r.status === 'fulfilled' && !!r.value)
-        .map(r => r.value);
-      
-      if (successfulVariants.length > 0) {
-        setItems(prev => prev.map(i => i.id === item.id ? { 
-          ...i, 
-          status: 'completed', 
-          resultImage: successfulVariants[0],
-          variants: successfulVariants,
-          activeVariantIndex: 0
-        } : i));
-      } else {
-        const firstErr = results.find((r): r is PromiseRejectedResult => r.status === 'rejected');
-        if (firstErr?.reason?.message === 'ABORTED' || isAbortedRef.current) {
-          setItems(prev => prev.map(i => i.id === item.id ? { ...i, status: 'pending', errorMessage: undefined } : i));
-          return;
-        }
-        throw firstErr?.reason || new Error("فشلت جميع محاولات توليد الصور المقترحة.");
-      }
-    } catch (error: any) {
-      if (error?.message === 'ABORTED' || error?.name === 'AbortError' || isAbortedRef.current) {
-        setItems(prev => prev.map(i => i.id === item.id ? { ...i, status: 'pending', errorMessage: undefined } : i));
-        return;
-      }
-      if (error?.name === 'API_KEY_REQUIRED' || error?.name === 'API_KEY_INVALID') {
-        handleForgetApiKey();
-      }
-      console.error("Inpainting error:", error);
-      let errMsg = error.message || "حدث خطأ أثناء معالجة الصورة";
-      const errStr = typeof error === 'object' && error !== null ? JSON.stringify(error).toLowerCase() : String(error).toLowerCase();
-      
-      const isQuotaError = errStr.includes("429") || errStr.includes("quota") || errStr.includes("resource_exhausted") || errStr.includes("limit") || errStr.includes("exceeded");
-      
-      if (isQuotaError) {
-        errMsg = "تجاوز حصة الاستخدام المجانية (Quota Exceeded): يتطلب هذا الموديل مفتاح API مدفوع ومفعل به خيار الدفع (Billing) أو مفتاح API خاص بك غير مستهلك الحصة. يرجى توفير مفتاح API مخصص أو المحاولة مجدداً لاحقاً.";
-      }
-      
-      setItems(prev => prev.map(i => i.id === item.id ? { ...i, status: 'error', errorMessage: errMsg } : i));
-    }
-  };
-
-  const handleDownload = (dataUrl: string, filename: string) => {
+  const handleDownload = useCallback((dataUrl: string, filename: string) => {
     const link = document.createElement('a');
     link.href = dataUrl;
     link.download = filenameForDataUrl(filename, dataUrl);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
-  };
-
-  const processAll = async () => {
-    if (!runtimeConfig) {
-      setRuntimeConfigError('إعدادات الخادم لم تكتمل بعد. انتظر لحظة ثم أعد المحاولة.');
-      return;
-    }
-    if (!ensureCredentials()) return;
-    if (enableBatchMerge && isOpenAIModel(selectedModel)) {
-      window.alert('دمج صور الباتش متاح حاليًا مع موديلات Gemini فقط.');
-      return;
-    }
-    isAbortedRef.current = false;
-    abortControllerRef.current = new AbortController();
-    setIsProcessing(true);
-
-    if (appMode === 'reimagine' && enableBatchMerge) {
-      const imagesToMerge = items.map(i => i.originalImage || i.maskedImage).filter((img): img is string => !!img);
-      if (imagesToMerge.length === 0) {
-        setIsProcessing(false);
-        return;
-      }
-
-      const mergedId = `merged-${Date.now()}`;
-      const newMergedItem: BatchItem = {
-        id: mergedId,
-        initialImage: imagesToMerge[0],
-        originalImage: imagesToMerge[0],
-        inputImages: imagesToMerge,
-        editHistory: [imagesToMerge[0]],
-        maskedImage: null,
-        resultImage: null,
-        status: 'processing'
-      };
-
-      setItems(prev => [newMergedItem, ...prev]);
-
-      try {
-        const variantCount = batchEnableMultiVariant ? Math.max(1, batchVariantsCount) : 1;
-        const currentSignal = abortControllerRef.current?.signal;
-        const variantIndexes = Array.from({ length: variantCount }, (_value, index) => index);
-        const results = await mapWithConcurrency(
-          variantIndexes,
-          runtimeConfig?.maxBatchConcurrency || 2,
-          () => generateBatchMerge(imagesToMerge, prompt, currentSignal),
-        );
-
-        if (isAbortedRef.current || currentSignal?.aborted) {
-          setItems(prev => prev.filter(item => item.id !== mergedId));
-          setIsProcessing(false);
-          return;
-        }
-
-        const validResults = results
-          .filter((r): r is PromiseFulfilledResult<string> => r.status === 'fulfilled' && !!r.value)
-          .map(r => r.value);
-
-        if (validResults.length === 0) {
-          const firstErr = results.find((r): r is PromiseRejectedResult => r.status === 'rejected');
-          if (firstErr?.reason?.message === 'ABORTED' || isAbortedRef.current) {
-            setItems(prev => prev.filter(item => item.id !== mergedId));
-            setIsProcessing(false);
-            return;
-          }
-          throw firstErr?.reason || new Error("فشل توليد أي بديل لدمج الصور.");
-        }
-
-        setItems(prev => prev.map(item => item.id === mergedId ? {
-          ...item,
-          status: 'completed',
-          resultImage: validResults[0],
-          variants: validResults,
-          activeVariantIndex: 0
-        } : item));
-      } catch (error: any) {
-        if (error?.message === 'ABORTED' || error?.name === 'AbortError' || isAbortedRef.current) {
-          setItems(prev => prev.filter(item => item.id !== mergedId));
-          setIsProcessing(false);
-          return;
-        }
-        if (error?.name === 'API_KEY_REQUIRED' || error?.name === 'API_KEY_INVALID') {
-          handleForgetApiKey();
-        }
-        console.error("Batch Merge Error:", error);
-        let errMsg = error.message || "حدث خطأ أثناء دمج الصور";
-        const errStr = typeof error === 'object' && error !== null ? JSON.stringify(error).toLowerCase() : String(error).toLowerCase();
-        
-        const isQuotaError = errStr.includes("429") || errStr.includes("quota") || errStr.includes("resource_exhausted") || errStr.includes("limit") || errStr.includes("exceeded");
-        if (isQuotaError) {
-          errMsg = "تجاوز حصة الاستخدام المجانية (Quota Exceeded): يتطلب هذا الموديل مفتاح API مدفوع أو غير مستهلك الحصة لتشغيله.";
-        }
-        setItems(prev => prev.map(item => item.id === mergedId ? {
-          ...item,
-          status: 'error',
-          errorMessage: errMsg
-        } : item));
-      }
-      setIsProcessing(false);
-      return;
-    }
-
-    const pendingItems = items.filter(i => {
-      const isPending = i.status === 'pending' || i.status === 'error';
-      if (appMode === 'reimagine') {
-        return isPending;
-      } else {
-        return isPending && i.maskedImage;
-      }
-    });
-
-    if (appMode === 'reimagine') {
-      await mapWithConcurrency(
-        pendingItems,
-        runtimeConfig?.maxBatchConcurrency || 2,
-        (item) => processImage(item),
-      );
-    } else {
-      // Sequential for Vanish mode (one by one)
-      for (const item of pendingItems) {
-        if (isAbortedRef.current) break;
-        await processImage(item);
-      }
-    }
-    setIsProcessing(false);
-  };
+  }, []);
 
   const downloadAllSequential = () => {
     setShowDownloadMenu(false);
@@ -1095,27 +600,16 @@ export default function App() {
         const item = completedItems[i];
         const imageUrl = item.resultImage || item.originalImage;
         
-        let base64Data = '';
-        let ext: 'png' | 'jpg' | 'webp' = 'jpg';
-
-        if (imageUrl.startsWith('data:')) {
-          const commaIdx = imageUrl.indexOf(',');
-          base64Data = imageUrl.substring(commaIdx + 1);
-          ext = dataUrlExtension(imageUrl);
-          
+        try {
+          const resp = await fetch(imageUrl);
+          if (!resp.ok) throw new Error('Unable to read image');
+          const blob = await resp.blob();
+          const buffer = await blob.arrayBuffer();
+          const ext = blob.type.includes('png') ? 'png' : blob.type.includes('webp') ? 'webp' : 'jpg';
           const fileName = `vanishai_image_${i + 1}_${item.id.slice(0, 6)}.${ext}`;
-          folder.file(fileName, base64Data, { base64: true });
-        } else {
-          try {
-            const resp = await fetch(imageUrl);
-            const blob = await resp.blob();
-            const buffer = await blob.arrayBuffer();
-            const extType = blob.type.includes('png') ? 'png' : 'jpg';
-            const fileName = `vanishai_image_${i + 1}_${item.id.slice(0, 6)}.${extType}`;
-            folder.file(fileName, buffer);
-          } catch (e) {
-            console.error("Error fetching image for zip:", e);
-          }
+          folder.file(fileName, buffer);
+        } catch (e) {
+          console.error("Error fetching image for zip:", e);
         }
         setZipProgress(Math.round(((i + 1) / completedItems.length) * 75));
       }
@@ -2030,19 +1524,7 @@ export default function App() {
                   <div className="absolute bottom-4 sm:bottom-8 flex flex-col sm:flex-row gap-2 sm:gap-4 bg-neutral-900/95 sm:bg-neutral-900/90 backdrop-blur-xl p-3 rounded-2xl border border-white/10 shadow-2xl w-[calc(100%-2rem)] sm:w-auto max-w-md">
                      <button 
                        onClick={() => {
-                         setItems(prev => prev.map(i => i.id === activeItem.id ? {
-                           ...i,
-                           editHistory: [...i.editHistory, i.originalImage],
-                           redoEditHistory: [],
-                           originalImage: i.resultImage!,
-                           resultImage: null,
-                           maskedImage: null,
-                           dalleMaskImage: null,
-                           maskOverlayImage: null,
-                           variants: undefined,
-                           activeVariantIndex: undefined,
-                           status: 'pending'
-                         } : i));
+                         setItems(prev => prev.map(i => i.id === activeItem.id ? acceptItemResult(i) : i));
                          setClearTrigger(c => c + 1);
                        }} 
                        className="px-4 py-2.5 bg-green-500 hover:bg-green-600 text-white rounded-xl text-xs sm:text-sm font-semibold transition-colors shadow-lg shadow-green-500/20 text-center w-full sm:w-auto"
@@ -2755,49 +2237,20 @@ export default function App() {
                   </span>
                 </div>
               ) : (
-                <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4 sm:gap-6 pb-12">
-                  {items.map((item, idx) => (
-                    <BatchCard
-                      key={item.id}
-                      item={item}
-                      idx={idx}
-                      onDelete={() => handleDeleteItem(item.id)}
-                      onCrop={() => {
-                        setActiveItemId(item.id);
-                        setShowCropModal(true);
-                      }}
-                      onReset={() => {
-                        setItems(prev => prev.map(i => i.id === item.id ? { ...i, status: 'pending', errorMessage: undefined, resultImage: null, variants: undefined } : i));
-                      }}
-                      onEditInVanish={() => {
-                        setItems(prev => prev.map(i => i.id === item.id ? acceptItemResult(i) : i));
-                        setClearTrigger(c => c + 1);
-                        setActiveItemId(item.id);
-                        setAppMode('vanish');
-                        setTool('brush');
-                        setShowSidebar(true);
-                      }}
-                      onAccept={() => {
-                        setItems(prev => prev.map(i => i.id === item.id ? acceptItemResult(i) : i));
-                        setClearTrigger(c => c + 1);
-                      }}
-                      onUndo={() => {
-                        setItems(prev => prev.map(i => i.id === item.id ? undoItem(i) : i));
-                        setClearTrigger(c => c + 1);
-                      }}
-                      onDownload={() => handleDownload(item.resultImage || item.originalImage, `vanishai-batch-${item.id}.jpg`)}
-                      onStop={handleForceStop}
-                      onSelectVariant={(variantUrl, vIdx) => {
-                        setItems(prev => prev.map(i => i.id === item.id ? {
-                          ...i,
-                          resultImage: variantUrl,
-                          activeVariantIndex: vIdx
-                        } : i));
-                      }}
-                      onImageDoubleClick={() => setLightboxItemId(item.id)}
-                    />
-                  ))}
-                </div>
+                <BatchGrid
+                  items={items}
+                  setItems={setItems}
+                  setActiveItemId={setActiveItemId}
+                  setShowCropModal={setShowCropModal}
+                  setClearTrigger={setClearTrigger}
+                  setAppMode={setAppMode}
+                  setTool={setTool}
+                  setShowSidebar={setShowSidebar}
+                  setLightboxItemId={setLightboxItemId}
+                  onDelete={handleDeleteItem}
+                  onDownload={handleDownload}
+                  onStop={handleForceStop}
+                />
               )}
 
             </div>
@@ -2895,312 +2348,24 @@ export default function App() {
         )}
       </AnimatePresence>
 
-      {/* Database History & Sessions Sidebar */}
-      <AnimatePresence>
-        {showDbSidebar && (
-          <>
-            {/* Backdrop Overlay for mobile screens */}
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              onClick={() => setShowDbSidebar(false)}
-              className="fixed inset-0 bg-black/60 z-[49] lg:hidden"
-            />
-
-            {/* Sidebar Panel */}
-            <motion.div 
-              initial={{ x: 380, opacity: 0 }}
-              animate={{ x: 0, opacity: 1 }}
-              exit={{ x: 380, opacity: 0 }}
-              transition={{ type: 'spring', damping: 25, stiffness: 200 }}
-              className="w-full sm:w-96 border-l border-white/10 bg-neutral-900/95 backdrop-blur-xl flex flex-col z-50 shrink-0 fixed right-0 top-16 bottom-0 shadow-2xl h-[calc(100vh-4rem)]"
-              dir="rtl"
-            >
-              {/* Drawer Top Header */}
-              <div className="p-4 border-b border-white/10 flex items-center justify-between bg-black/30">
-                <div className="flex items-center gap-2">
-                  <Database className="w-4 h-4 text-purple-400" />
-                  <h2 className="text-sm font-bold font-sans">معرض الأرشيف وجلسات العمل</h2>
-                </div>
-                <button 
-                  onClick={() => setShowDbSidebar(false)}
-                  className="p-1 px-2.5 rounded-lg hover:bg-white/10 text-neutral-400 hover:text-white transition-colors text-xs font-sans"
-                >
-                  إغلاق ✕
-                </button>
-              </div>
-
-              {/* Navigation Tabs (Sessions vs Individual Images Archive) */}
-              <div className="p-2 border-b border-white/5 bg-black/20 flex gap-1.5">
-                <button
-                  onClick={() => setArchiveTab('sessions')}
-                  className={cn(
-                    "flex-1 py-2 px-3 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer font-sans",
-                    archiveTab === 'sessions'
-                      ? "bg-purple-600/30 text-purple-200 border border-purple-500/40 shadow-sm"
-                      : "text-neutral-400 hover:text-white hover:bg-white/5 border border-transparent"
-                  )}
-                >
-                  <FolderArchive className="w-3.5 h-3.5 text-purple-400" />
-                  <span>آخر 5 جلسات</span>
-                  <span className="text-[10px] bg-purple-500/20 px-1.5 py-0.2 rounded-full font-mono">
-                    {sessions.length}/5
-                  </span>
-                </button>
-
-                <button
-                  onClick={() => setArchiveTab('images')}
-                  className={cn(
-                    "flex-1 py-2 px-3 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer font-sans",
-                    archiveTab === 'images'
-                      ? "bg-purple-600/30 text-purple-200 border border-purple-500/40 shadow-sm"
-                      : "text-neutral-400 hover:text-white hover:bg-white/5 border border-transparent"
-                  )}
-                >
-                  <ImageIcon className="w-3.5 h-3.5 text-blue-400" />
-                  <span>صور الأرشيف</span>
-                  <span className="text-[10px] bg-blue-500/20 px-1.5 py-0.2 rounded-full font-mono">
-                    {dbItems.length}/100
-                  </span>
-                </button>
-              </div>
-
-              {/* TAB 1: WORK SESSIONS */}
-              {archiveTab === 'sessions' && (
-                <div className="flex-1 flex flex-col min-h-0">
-                  {/* Sessions Action Bar & Expiry Notice */}
-                  <div className="p-3 bg-neutral-950/40 border-b border-white/5 space-y-2">
-                    <div className="flex items-center justify-between gap-2">
-                      <button
-                        onClick={handleSaveCurrentSessionNow}
-                        disabled={items.length === 0}
-                        className="flex-1 py-1.5 px-2.5 rounded-lg bg-purple-600/20 hover:bg-purple-600/30 disabled:opacity-40 text-purple-200 border border-purple-500/30 text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer font-sans"
-                        title="حفظ جلسة العمل الحالية كنسخة مستقلة في الأرشيف"
-                      >
-                        <Save className="w-3.5 h-3.5" />
-                        <span>حفظ الجلسة الحالية ({items.length})</span>
-                      </button>
-
-                      {sessions.length > 0 && (
-                        <button
-                          onClick={handleClearAllSessions}
-                          className="py-1.5 px-2.5 rounded-lg bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/20 text-xs font-medium flex items-center justify-center gap-1 transition-all cursor-pointer font-sans"
-                          title="مسح كافة الجلسات المحفوظة"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                          <span>مسح الكل</span>
-                        </button>
-                      )}
-                    </div>
-
-                    <div className="flex items-start gap-1.5 p-2 rounded-lg bg-purple-950/20 border border-purple-500/15 text-[10px] text-purple-300/80 font-sans leading-relaxed">
-                      <Clock className="w-3.5 h-3.5 shrink-0 text-purple-400 mt-0.5" />
-                      <div>
-                        <strong>حفظ تلقائي لآخر 5 جلسات:</strong> تُحفظ جلسات العمل بكامل تفاصيلها وتُحذف تلقائياً بعد مرور 3 أيام في حال عدم استخدامها.
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Sessions List */}
-                  <div className="flex-1 overflow-y-auto p-4 space-y-3" style={{ scrollbarWidth: 'thin' }}>
-                    {sessions.map((session, sIdx) => {
-                      const isCurrentSession = session.id === currentSessionId;
-                      const sessionDate = new Date(session.updatedAt || session.createdAt);
-                      
-                      return (
-                        <div
-                          key={session.id}
-                          className={cn(
-                            "p-3 rounded-xl border transition-all flex flex-col gap-3 bg-white/5",
-                            isCurrentSession ? "border-purple-500/30 bg-purple-500/10" : "border-white/5 hover:bg-white/10"
-                          )}
-                        >
-                          {/* Session Header Info */}
-                          <div className="flex items-center justify-between">
-                            <div className="flex items-center gap-2">
-                              <span className="w-6 h-6 rounded-lg bg-purple-500/20 text-purple-300 flex items-center justify-center text-xs font-bold font-mono">
-                                #{sIdx + 1}
-                              </span>
-                              <div>
-                                <h3 className="text-xs font-bold text-neutral-200 font-sans">
-                                  جلسة عمل ({session.itemCount} صورة)
-                                </h3>
-                                <p className="text-[10px] text-neutral-400 font-mono mt-0.5">
-                                  {sessionDate.toLocaleDateString('ar-EG', { month: 'short', day: 'numeric' })} - {sessionDate.toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' })}
-                                </p>
-                              </div>
-                            </div>
-
-                            <div className="flex flex-col items-end gap-1">
-                              {isCurrentSession && (
-                                <span className="text-[9px] bg-green-500/20 text-green-300 px-2 py-0.5 rounded-full border border-green-500/30 font-bold font-sans">
-                                  الجلسة الحالية ●
-                                </span>
-                              )}
-                              <span className="text-[9px] text-neutral-400 font-sans">
-                                مكتمل: {session.completedCount}/{session.itemCount}
-                              </span>
-                            </div>
-                          </div>
-
-                          {/* Session Thumbnail Grid Preview */}
-                          {session.previewThumbnails && session.previewThumbnails.length > 0 && (
-                            <div className="grid grid-cols-4 gap-1.5 bg-black/40 p-1.5 rounded-lg border border-white/5">
-                              {session.previewThumbnails.map((thumbUrl, tIdx) => (
-                                <div key={tIdx} className="aspect-square rounded-md overflow-hidden bg-black/60 border border-white/10">
-                                  <img 
-                                    src={thumbUrl} 
-                                    alt={`Session item ${tIdx + 1}`} 
-                                    className="w-full h-full object-cover pointer-events-none" 
-                                  />
-                                </div>
-                              ))}
-                            </div>
-                          )}
-
-                          {/* Session Actions */}
-                          <div className="flex items-center gap-2 border-t border-white/5 pt-2.5">
-                            <button
-                              onClick={() => handleRestoreSession(session)}
-                              className="flex-1 py-1.5 px-3 rounded-lg bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-500 hover:to-blue-500 text-white text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer font-sans shadow-md"
-                              title="استعادة كافة الصور والتعديلات من هذه الجلسة إلى العمل النشط"
-                            >
-                              <RotateCcw className="w-3.5 h-3.5" />
-                              <span>استعادة هذه الجلسة ↺</span>
-                            </button>
-
-                            <button
-                              onClick={(e) => handleDeleteSession(session.id, e)}
-                              className="p-1.5 rounded-lg bg-red-500/10 hover:bg-red-500/20 text-red-400 hover:text-red-300 transition-colors border border-red-500/20 cursor-pointer"
-                              title="حذف هذه الجلسة نهائياً"
-                            >
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </button>
-                          </div>
-                        </div>
-                      );
-                    })}
-
-                    {sessions.length === 0 && (
-                      <div className="text-center py-12 px-2 text-sm text-neutral-400 font-sans leading-relaxed">
-                        <FolderArchive className="w-8 h-8 text-neutral-600 mx-auto mb-2" />
-                        <p className="font-bold text-neutral-300">لا توجد جلسات عمل محفوظة حالياً</p>
-                        <p className="text-xs text-neutral-500 mt-1.5 leading-relaxed">
-                          عند رفع وتعديل الصور، يتم حفظ آخر 5 جلسات عمل تلقائياً في قاعدة البيانات لاستعادتها في أي وقت حتى بعد إغلاق المتصفح أو عمل ريفرش!
-                        </p>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              )}
-
-              {/* TAB 2: INDIVIDUAL IMAGES ARCHIVE (100 Capacity) */}
-              {archiveTab === 'images' && (
-                <div className="flex-1 flex flex-col min-h-0">
-                  {/* Images Action Bar */}
-                  <div className="p-3 bg-neutral-950/40 border-b border-white/5 space-y-2">
-                    <div className="flex items-center justify-between gap-2">
-                      <button
-                        onClick={handleRestoreAllArchiveImages}
-                        disabled={dbItems.length === 0}
-                        className="flex-1 py-1.5 px-3 rounded-lg bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-500 hover:to-blue-500 disabled:opacity-40 text-white text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer font-sans shadow-md"
-                        title="استعادة كل الصور المحفوظة في الأرشيف إلى العمل النشط"
-                      >
-                        <Download className="w-3.5 h-3.5" />
-                        <span>استعادة الكل للعمل النشط 📥 ({dbItems.length})</span>
-                      </button>
-
-                      {dbItems.length > 0 && (
-                        <button
-                          onClick={handleClearAllArchiveImages}
-                          className="py-1.5 px-2.5 rounded-lg bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/20 text-xs font-medium flex items-center justify-center gap-1 transition-all cursor-pointer font-sans"
-                          title="تفريغ كل الصور من الأرشيف"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                          <span>تفريغ</span>
-                        </button>
-                      )}
-                    </div>
-
-                    <div className="flex items-center justify-between text-[10px] text-neutral-400 font-sans bg-black/30 p-1.5 rounded-lg border border-white/5">
-                      <span>سعة الأرشيف: <strong>100 صورة</strong></span>
-                      <span className="font-mono text-purple-300 font-bold">{dbItems.length} / 100</span>
-                    </div>
-                  </div>
-
-                  {/* Images List */}
-                  <div className="flex-1 overflow-y-auto p-4 space-y-3" style={{ scrollbarWidth: 'thin' }}>
-                    {dbItems.map((item, idx) => {
-                      const isAlreadyInActive = items.some(i => i.id === item.id);
-                      return (
-                        <div 
-                          key={item.id}
-                          className={cn(
-                            "p-3 rounded-xl border transition-all flex flex-col gap-3 bg-white/5",
-                            isAlreadyInActive ? "border-purple-500/25 bg-purple-500/5" : "border-white/5 hover:bg-white/10"
-                          )}
-                        >
-                          <div className="flex gap-3">
-                            <div className="w-16 h-16 rounded-lg overflow-hidden bg-black/50 shrink-0 relative border border-white/10">
-                              <img src={item.resultImage || item.originalImage} alt="thumbnail" className="w-full h-full object-cover pointer-events-none" />
-                            </div>
-                            <div className="flex-1 min-w-0 flex flex-col justify-center">
-                              <p className="text-xs font-semibold text-neutral-300 truncate font-sans">صورة محفوظة #{dbItems.length - idx}</p>
-                              <p className="text-[10px] text-neutral-500 mt-1 font-mono">{new Date(item.createdAt || Date.now()).toLocaleDateString('ar-EG')}</p>
-                              <div className="flex items-center gap-1.5 mt-1.5">
-                                <div className={cn(
-                                  "w-1.5 h-1.5 rounded-full",
-                                  item.status === 'completed' ? "bg-green-500" :
-                                  item.status === 'processing' ? "bg-blue-500" :
-                                  item.status === 'error' ? "bg-red-500" : "bg-neutral-500"
-                                )} />
-                                <span className="text-[10px] text-neutral-400 capitalize font-sans">{item.status === 'completed' ? 'جاهزة' : item.status}</span>
-                              </div>
-                            </div>
-                          </div>
-
-                          <div className="flex gap-2 border-t border-white/5 pt-2.5 mt-1">
-                            <button
-                              onClick={() => handleAddFromDbToActive(item)}
-                              className={cn(
-                                "flex-1 py-1.5 px-3 rounded-lg text-xs font-bold transition-all cursor-pointer text-center font-sans",
-                                isAlreadyInActive 
-                                  ? "bg-purple-600/15 text-purple-300 border border-purple-500/30 font-semibold" 
-                                  : "bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-500 hover:to-blue-500 text-white font-bold"
-                              )}
-                            >
-                              {isAlreadyInActive ? "نشطة حالياً ✓" : "إضافة للعمل النشط ➕"}
-                            </button>
-                            
-                            <button
-                              onClick={(e) => handleDeleteFromDb(item.id, e)}
-                              className="p-1.5 rounded-lg bg-red-500/10 hover:bg-red-500/20 text-red-400 hover:text-red-300 transition-colors border border-red-500/20 cursor-pointer"
-                              title="حذف نهائي من الأرشيف"
-                            >
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </button>
-                          </div>
-                        </div>
-                      );
-                    })}
-
-                    {dbItems.length === 0 && (
-                      <div className="text-center py-12 px-2 text-sm text-neutral-400 font-sans leading-relaxed">
-                        <ImageIcon className="w-8 h-8 text-neutral-600 mx-auto mb-2" />
-                        <p className="font-bold text-neutral-300">لا توجد صور محفوظة في الأرشيف حالياً</p>
-                        <p className="text-xs text-neutral-500 mt-1.5">
-                          تتسع قاعدة البيانات حتى 100 صورة ويتم حفظ أي صورة ترفعها وتعدلها تلقائياً!
-                        </p>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              )}
-            </motion.div>
-          </>
-        )}
-      </AnimatePresence>
+      <ArchiveSidebar
+        open={showDbSidebar}
+        tab={archiveTab}
+        onTabChange={setArchiveTab}
+        onClose={() => setShowDbSidebar(false)}
+        sessions={sessions}
+        currentSessionId={currentSessionId}
+        activeItems={items}
+        archiveItems={dbItems}
+        onSaveSession={() => void handleSaveCurrentSessionNow()}
+        onClearSessions={() => void handleClearAllSessions()}
+        onRestoreSession={handleRestoreSession}
+        onDeleteSession={(sessionId) => void handleDeleteSession(sessionId)}
+        onRestoreAllImages={handleRestoreAllArchiveImages}
+        onClearImages={() => void handleClearAllArchiveImages()}
+        onActivateImage={handleAddFromDbToActive}
+        onDeleteImage={handleDeleteFromDb}
+      />
     </div>
   );
 }

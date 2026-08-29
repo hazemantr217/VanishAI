@@ -2,6 +2,8 @@ import React, { useRef, useState, useEffect } from 'react';
 import { Stage, Layer, Image as KonvaImage, Line, Circle, Rect, Group } from 'react-konva';
 import Konva from 'konva';
 import { cn } from '../lib/utils';
+import { fitImageToContainer, pointerToImagePoint } from '../lib/canvas-geometry';
+import { canvasToManagedImageUrl, revokeManagedImageUrl } from '../lib/image-urls';
 
 interface CanvasWorkspaceProps {
   itemId: string | null;
@@ -104,13 +106,13 @@ async function performFloodFill(
     const maskPixels = new ImageData(new Uint8ClampedArray(maskBuffer), w, h);
     ctx.clearRect(0, 0, w, h);
     ctx.putImageData(maskPixels, 0, 0);
-    return await loadHtmlImage(canvas.toDataURL('image/png'));
+    return await loadHtmlImage(await canvasToManagedImageUrl(canvas));
   } finally {
     worker.terminate();
   }
 }
 
-export default function CanvasWorkspace({
+function CanvasWorkspace({
   itemId,
   imageUrl,
   tool,
@@ -158,6 +160,7 @@ export default function CanvasWorkspace({
   const [lines, setLines] = useState<MaskShape[]>([]);
   const linesRef = useRef<MaskShape[]>([]);
   const [isDrawing, setIsDrawing] = useState(false);
+  const isDrawingRef = useRef(false);
   const [isWandProcessing, setIsWandProcessing] = useState(false);
   const [stageScale, setStageScale] = useState(1);
   const [stageX, setStageX] = useState(0);
@@ -165,6 +168,10 @@ export default function CanvasWorkspace({
   const [initialScale, setInitialScale] = useState(1);
   const [isSpacePressed, setIsSpacePressed] = useState(false);
   const [mouseInStage, setMouseInStage] = useState(false);
+  const fittedItemRef = useRef<string | null>(null);
+  const previousDimensionsRef = useRef({ width: 0, height: 0 });
+  const stageScaleRef = useRef(1);
+  const initialScaleRef = useRef(1);
 
   useEffect(() => {
     const container = containerRef.current;
@@ -188,7 +195,15 @@ export default function CanvasWorkspace({
     };
   }, []);
   
-  const actualBrushSize = initialScale > 0 ? brushSize / initialScale : brushSize;
+  useEffect(() => {
+    stageScaleRef.current = stageScale;
+  }, [stageScale]);
+
+  useEffect(() => {
+    initialScaleRef.current = initialScale;
+  }, [initialScale]);
+
+  const actualBrushSize = stageScale > 0 ? brushSize / stageScale : brushSize;
 
   const [history, setHistory] = useState<MaskShape[][]>([[]]);
   const historyRef = useRef<MaskShape[][]>([[]]);
@@ -196,6 +211,7 @@ export default function CanvasWorkspace({
   const historyStepRef = useRef(0);
   const onMaskChangeRef = useRef(onMaskChange);
   const previousClearTriggerRef = useRef(clearTrigger);
+  const exportSequenceRef = useRef(0);
 
   useEffect(() => {
     onMaskChangeRef.current = onMaskChange;
@@ -218,11 +234,12 @@ export default function CanvasWorkspace({
     const nextHistory = historyRef.current.slice(0, historyStepRef.current + 1);
     nextHistory.push(nextLines);
     setCurrentHistory(nextHistory, nextHistory.length - 1);
-    exportMask(nextLines);
+    void exportMask(nextLines);
   };
 
   useEffect(() => {
     let cancelled = false;
+    fittedItemRef.current = null;
     setCurrentLines([]);
     setCurrentHistory([[]], 0);
 
@@ -250,24 +267,39 @@ export default function CanvasWorkspace({
   }, [clearTrigger]);
 
   useEffect(() => {
-    if (image && dimensions.width > 0 && dimensions.height > 0) {
-      const imgWidth = image.naturalWidth || image.width || 800;
-      const imgHeight = image.naturalHeight || image.height || 600;
-      
-      if (imgWidth > 0 && imgHeight > 0) {
-        // Fit image to stage
-        const scale = Math.min(
-          dimensions.width / imgWidth,
-          dimensions.height / imgHeight
-        ) * 0.9;
-        
-        setInitialScale(scale);
-        setStageScale(scale);
-        setStageX((dimensions.width - imgWidth * scale) / 2);
-        setStageY((dimensions.height - imgHeight * scale) / 2);
-      }
+    if (!image || dimensions.width <= 0 || dimensions.height <= 0 || isDrawingRef.current) return;
+    const imgWidth = image.naturalWidth || image.width || 800;
+    const imgHeight = image.naturalHeight || image.height || 600;
+    const nextFit = fitImageToContainer(dimensions.width, dimensions.height, imgWidth, imgHeight);
+    const previousDimensions = previousDimensionsRef.current;
+    const firstFitForItem = fittedItemRef.current !== itemId || previousDimensions.width === 0;
+    const isAtFitScale = Math.abs(stageScaleRef.current - initialScaleRef.current) < 0.0001;
+
+    if (firstFitForItem || isAtFitScale) {
+      fittedItemRef.current = itemId;
+      setInitialScale(nextFit.scale);
+      setStageScale(nextFit.scale);
+      setStageX(nextFit.x);
+      setStageY(nextFit.y);
+    } else {
+      setInitialScale(nextFit.scale);
+      setStageX((x) => x + (dimensions.width - previousDimensions.width) / 2);
+      setStageY((y) => y + (dimensions.height - previousDimensions.height) / 2);
     }
-  }, [image, dimensions]);
+    previousDimensionsRef.current = dimensions;
+  }, [image, itemId, dimensions, isDrawing]);
+
+  const stagePointerInImage = (stage: Konva.Stage) => {
+    const pointer = stage.getPointerPosition();
+    if (!pointer) return null;
+    const imgWidth = image ? (image.naturalWidth || image.width || 800) : 800;
+    const imgHeight = image ? (image.naturalHeight || image.height || 600) : 600;
+    return pointerToImagePoint(pointer, {
+      x: stage.x(),
+      y: stage.y(),
+      scale: stage.scaleX() || 1,
+    }, imgWidth, imgHeight);
+  };
 
   const handleMouseDown = async (e: any) => {
     if (tool === 'pan' || isSpacePressed || e.evt.button === 1 || e.evt.button === 2) {
@@ -279,12 +311,10 @@ export default function CanvasWorkspace({
       return;
     }
     
-    const pos = e.target.getStage().getRelativePointerPosition();
+    const pos = stagePointerInImage(e.target.getStage());
     if (!pos) return;
-    const imgWidth = image ? (image.naturalWidth || image.width || 800) : 800;
-    const imgHeight = image ? (image.naturalHeight || image.height || 600) : 600;
-    const clampedX = Math.max(0, Math.min(imgWidth, pos.x));
-    const clampedY = Math.max(0, Math.min(imgHeight, pos.y));
+    const clampedX = pos.x;
+    const clampedY = pos.y;
 
     if (tool === 'wand') {
       if (!image || isWandProcessing) return;
@@ -302,6 +332,7 @@ export default function CanvasWorkspace({
       return;
     }
 
+    isDrawingRef.current = true;
     setIsDrawing(true);
     if (tool === 'rect') {
       setCurrentLines([...linesRef.current, { type: 'rect', tool, points: [clampedX, clampedY, clampedX, clampedY] }]);
@@ -312,7 +343,7 @@ export default function CanvasWorkspace({
 
   const handleMouseMove = (e: any) => {
     const stage = e.target.getStage();
-    const point = stage.getRelativePointerPosition();
+    const point = stagePointerInImage(stage);
     if (!point) return;
 
     if (cursorGroupRef.current && cursorLayerRef.current) {
@@ -326,10 +357,8 @@ export default function CanvasWorkspace({
     const lastLine = currentLines[currentLines.length - 1];
     if (!lastLine || lastLine.type === 'wand_mask' || lastLine.type === 'bitmap_mask') return;
     
-    const imgWidth = image ? (image.naturalWidth || image.width || 800) : 800;
-    const imgHeight = image ? (image.naturalHeight || image.height || 600) : 600;
-    const clampedX = Math.max(0, Math.min(imgWidth, point.x));
-    const clampedY = Math.max(0, Math.min(imgHeight, point.y));
+    const clampedX = point.x;
+    const clampedY = point.y;
 
     const updatedShape: MaskShape = lastLine.type === 'rect'
       ? { ...lastLine, points: [lastLine.points[0], lastLine.points[1], clampedX, clampedY] }
@@ -343,6 +372,7 @@ export default function CanvasWorkspace({
        stage.draggable(tool === 'pan' || isSpacePressed);
     }
     if (tool === 'pan' || isSpacePressed || e.evt.button === 1 || e.evt.button === 2 || tool === 'wand') return;
+    isDrawingRef.current = false;
     setIsDrawing(false);
     
     commitShapes(linesRef.current);
@@ -378,7 +408,8 @@ export default function CanvasWorkspace({
     setStageY(pointer.y - mousePointTo.y * newScale);
   };
 
-  function exportMask(shapes: MaskShape[]) {
+  async function exportMask(shapes: MaskShape[]) {
+    const exportSequence = ++exportSequenceRef.current;
     if (!image) return;
     if (shapes.length === 0) {
       onMaskChangeRef.current('', '', '');
@@ -437,7 +468,7 @@ export default function CanvasWorkspace({
     }));
     overlayLayer.draw();
 
-    const maskOverlayUrl = overlayStage.toDataURL({ pixelRatio: 1, mimeType: 'image/png' });
+    const overlayCanvas = overlayStage.toCanvas({ pixelRatio: 1 });
     const maskedCanvas = document.createElement('canvas');
     maskedCanvas.width = exportWidth;
     maskedCanvas.height = exportHeight;
@@ -447,8 +478,7 @@ export default function CanvasWorkspace({
       return;
     }
     maskedContext.drawImage(image, 0, 0, exportWidth, exportHeight);
-    maskedContext.drawImage(overlayStage.toCanvas({ pixelRatio: 1 }), 0, 0);
-    const dataUrl = maskedCanvas.toDataURL('image/png');
+    maskedContext.drawImage(overlayCanvas, 0, 0);
 
     const dalleStage = new Konva.Stage({
       container: document.createElement('div'),
@@ -496,16 +526,32 @@ export default function CanvasWorkspace({
       }
     });
     dalleLayer.draw();
-    const dalleMaskUrl = dalleStage.toDataURL({ pixelRatio: 1, mimeType: 'image/png' });
+    const dalleCanvas = dalleStage.toCanvas({ pixelRatio: 1 });
 
-    onMaskChangeRef.current(dataUrl, dalleMaskUrl, maskOverlayUrl);
-    overlayStage.destroy();
-    dalleStage.destroy();
+    try {
+      const [maskedImageUrl, dalleMaskUrl, maskOverlayUrl] = await Promise.all([
+        canvasToManagedImageUrl(maskedCanvas),
+        canvasToManagedImageUrl(dalleCanvas),
+        canvasToManagedImageUrl(overlayCanvas),
+      ]);
+      if (exportSequence !== exportSequenceRef.current) {
+        revokeManagedImageUrl(maskedImageUrl);
+        revokeManagedImageUrl(dalleMaskUrl);
+        revokeManagedImageUrl(maskOverlayUrl);
+        return;
+      }
+      onMaskChangeRef.current(maskedImageUrl, dalleMaskUrl, maskOverlayUrl);
+    } catch (error) {
+      console.error('Unable to export image mask:', error);
+    } finally {
+      overlayStage.destroy();
+      dalleStage.destroy();
+    }
   }
 
   useEffect(() => {
     if (image && linesRef.current.length > 0) {
-      exportMask(linesRef.current);
+      void exportMask(linesRef.current);
     }
   }, [image, maskColor]);
 
@@ -527,7 +573,7 @@ export default function CanvasWorkspace({
             const snapshot = historyRef.current[nextStep];
             setCurrentLines(snapshot);
             setCurrentHistory(historyRef.current, nextStep);
-            exportMask(snapshot);
+            void exportMask(snapshot);
           }
         }
       }
@@ -772,3 +818,5 @@ export default function CanvasWorkspace({
     </div>
   );
 }
+
+export default React.memo(CanvasWorkspace);

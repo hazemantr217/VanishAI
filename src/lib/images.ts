@@ -1,4 +1,5 @@
 import type { BatchItem } from '../types';
+import { canvasToManagedImageUrl, createManagedImageUrl, imageMimeType } from './image-urls';
 
 const SUPPORTED_UPLOAD_MIME_TYPES = new Set(['image/png', 'image/jpeg', 'image/webp']);
 const MAX_UPLOAD_BYTES = 45 * 1024 * 1024;
@@ -12,11 +13,11 @@ function loadImage(dataUrl: string): Promise<HTMLImageElement> {
   });
 }
 
-const pngDataUrlCache = new Map<string, string>();
+const pngImageUrlCache = new Map<string, string>();
 
-export async function toPngDataUrl(imageUrl: string): Promise<string> {
-  if (imageUrl.startsWith('data:image/png;')) return imageUrl;
-  const cached = pngDataUrlCache.get(imageUrl);
+export async function toPngImageUrl(imageUrl: string): Promise<string> {
+  if (imageMimeType(imageUrl) === 'image/png') return imageUrl;
+  const cached = pngImageUrlCache.get(imageUrl);
   if (cached) return cached;
 
   const image = await loadImage(imageUrl);
@@ -26,27 +27,14 @@ export async function toPngDataUrl(imageUrl: string): Promise<string> {
   const context = canvas.getContext('2d', { alpha: true });
   if (!context) throw new Error('Canvas غير متاح لتحويل الصورة إلى PNG.');
   context.drawImage(image, 0, 0, canvas.width, canvas.height);
-  const png = canvas.toDataURL('image/png');
+  const png = await canvasToManagedImageUrl(canvas);
 
-  if (pngDataUrlCache.size >= 10) {
-    const oldest = pngDataUrlCache.keys().next().value as string | undefined;
-    if (oldest) pngDataUrlCache.delete(oldest);
+  if (pngImageUrlCache.size >= 10) {
+    const oldest = pngImageUrlCache.keys().next().value as string | undefined;
+    if (oldest) pngImageUrlCache.delete(oldest);
   }
-  pngDataUrlCache.set(imageUrl, png);
+  pngImageUrlCache.set(imageUrl, png);
   return png;
-}
-
-function readFileAsDataUrl(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => {
-      if (typeof reader.result === 'string') resolve(reader.result);
-      else reject(new Error(`تعذر قراءة الملف ${file.name}.`));
-    };
-    reader.onerror = () => reject(reader.error || new Error(`فشل تحميل الملف ${file.name}.`));
-    reader.onabort = () => reject(new DOMException('Aborted', 'AbortError'));
-    reader.readAsDataURL(file);
-  });
 }
 
 export async function filesToBatchItems(
@@ -59,32 +47,26 @@ export async function filesToBatchItems(
   const failedFiles = files
     .filter((file) => file.type.startsWith('image/') && !imageFiles.includes(file))
     .map((file) => file.name);
-  const results = await Promise.allSettled(imageFiles.map(readFileAsDataUrl));
   const baseTime = Date.now();
-  const items: BatchItem[] = [];
-
-  results.forEach((result, index) => {
-    if (result.status === 'fulfilled') {
-      items.push({
-        id: createId(),
-        initialImage: result.value,
-        originalImage: result.value,
-        editHistory: [],
-        maskedImage: null,
-        resultImage: null,
-        status: 'pending',
-        createdAt: baseTime - index,
-      });
-    } else {
-      failedFiles.push(imageFiles[index]?.name || `image-${index + 1}`);
-    }
+  const items = imageFiles.map((file, index): BatchItem => {
+    const imageUrl = createManagedImageUrl(file);
+    return {
+      id: createId(),
+      initialImage: imageUrl,
+      originalImage: imageUrl,
+      editHistory: [],
+      maskedImage: null,
+      resultImage: null,
+      status: 'pending',
+      createdAt: baseTime - index,
+    };
   });
 
   return { items, failedFiles };
 }
 
 export function dataUrlExtension(dataUrl: string): 'png' | 'jpg' | 'webp' {
-  const mimeType = /^data:(image\/[^;]+);/i.exec(dataUrl)?.[1]?.toLowerCase();
+  const mimeType = imageMimeType(dataUrl);
   if (mimeType === 'image/png') return 'png';
   if (mimeType === 'image/webp') return 'webp';
   return 'jpg';
@@ -149,5 +131,5 @@ export async function lockPixelsOutsideMask(
   generatedContext.globalCompositeOperation = 'destination-in';
   generatedContext.drawImage(maskCanvas, 0, 0);
   outputContext.drawImage(generatedCanvas, 0, 0);
-  return output.toDataURL('image/png');
+  return canvasToManagedImageUrl(output);
 }

@@ -4,7 +4,7 @@ import path from 'node:path';
 import { apiRouter } from './server/api-router';
 import { serverConfig } from './server/config';
 import { apiMiddlewareErrorHandler } from './server/http-error-handler';
-import { apiRateLimiter, enforceSameOrigin, securityHeaders } from './server/security';
+import { createApiRateLimiter, enforceSameOrigin, securityHeaders } from './server/security';
 
 export async function createApp() {
   const app = express();
@@ -12,7 +12,7 @@ export async function createApp() {
   app.set('trust proxy', 1);
   app.use(securityHeaders);
 
-  app.use('/api', apiRateLimiter);
+  app.use('/api', await createApiRateLimiter());
   app.use('/api', enforceSameOrigin);
   app.use('/api', express.json({ limit: serverConfig.requestBodyLimit, strict: true }));
   app.use('/api', apiRouter);

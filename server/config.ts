@@ -19,6 +19,7 @@ function requestBodyLimit(value: string | undefined): string {
 export const serverConfig = {
   managedGeminiApiKey: cleanSecret(process.env.GEMINI_API_KEY),
   managedOpenAIApiKey: cleanSecret(process.env.OPENAI_API_KEY),
+  redisUrl: cleanSecret(process.env.REDIS_URL),
   port: (() => {
     const parsed = Number(process.env.PORT || 3000);
     return Number.isInteger(parsed) && parsed > 0 && parsed <= 65_535 ? parsed : 3000;

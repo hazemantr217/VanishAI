@@ -5,6 +5,7 @@ import type {
   MergeBatchRequest,
   RuntimeConfig,
 } from '../shared/api';
+import { imageUrlToBlob, toManagedImageUrl } from '../lib/image-urls';
 
 const SESSION_KEY = 'vanishai_gemini_api_key';
 let inMemoryGeminiApiKey = '';
@@ -128,11 +129,12 @@ export async function requestInpaint(
   formData.set('maskedImage', maskedBlob, filenameForBlob('masked', maskedBlob));
   if (dalleMaskBlob) formData.set('dalleMaskImage', dalleMaskBlob, filenameForBlob('mask', dalleMaskBlob));
 
-  return apiRequest<ImageResultResponse>('/api/inpaint', {
+  const response = await apiRequest<ImageResultResponse>('/api/inpaint', {
     method: 'POST',
     body: formData,
     signal,
   }, { includeGeminiKey: true, retryRateLimit: true });
+  return { ...response, resultImage: await toManagedImageUrl(response.resultImage) };
 }
 
 export async function requestBatchMerge(
@@ -147,17 +149,12 @@ export async function requestBatchMerge(
     formData.append('images', blob, filenameForBlob(`image-${index + 1}`, blob));
   });
 
-  return apiRequest<ImageResultResponse>('/api/merge-batch', {
+  const response = await apiRequest<ImageResultResponse>('/api/merge-batch', {
     method: 'POST',
     body: formData,
     signal,
   }, { includeGeminiKey: true, retryRateLimit: true });
-}
-
-async function imageUrlToBlob(imageUrl: string): Promise<Blob> {
-  const response = await fetch(imageUrl);
-  if (!response.ok) throw new Error('تعذر تجهيز الصورة للرفع.');
-  return response.blob();
+  return { ...response, resultImage: await toManagedImageUrl(response.resultImage) };
 }
 
 function filenameForBlob(stem: string, blob: Blob): string {

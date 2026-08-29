@@ -1,6 +1,9 @@
 import type { NextFunction, Request, Response } from 'express';
 import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
+import { RedisStore, type RedisReply } from 'rate-limit-redis';
+import { createClient } from 'redis';
+import { serverConfig } from './config';
 
 export const securityHeaders = helmet({
   contentSecurityPolicy: process.env.NODE_ENV === 'production' ? {
@@ -22,17 +25,33 @@ export const securityHeaders = helmet({
   crossOriginResourcePolicy: { policy: 'same-site' },
 });
 
-export const apiRateLimiter = rateLimit({
-  windowMs: 10 * 60 * 1000,
-  limit: Math.max(5, Number.parseInt(process.env.API_RATE_LIMIT_MAX || '40', 10) || 40),
-  skip: (request) => request.method === 'GET' || request.method === 'HEAD' || request.method === 'OPTIONS',
-  standardHeaders: 'draft-8',
-  legacyHeaders: false,
-  message: {
-    error: 'طلبات كثيرة جدًا من هذا الجهاز. انتظر قليلًا ثم أعد المحاولة.',
-    code: 'RATE_LIMITED',
-  },
-});
+export async function createApiRateLimiter() {
+  const store = serverConfig.redisUrl ? await createRedisRateLimitStore(serverConfig.redisUrl) : undefined;
+  return rateLimit({
+    windowMs: 10 * 60 * 1000,
+    limit: Math.max(5, Number.parseInt(process.env.API_RATE_LIMIT_MAX || '40', 10) || 40),
+    skip: (request) => request.method === 'GET' || request.method === 'HEAD' || request.method === 'OPTIONS',
+    standardHeaders: 'draft-8',
+    legacyHeaders: false,
+    store,
+    message: {
+      error: 'طلبات كثيرة جدًا من هذا الجهاز. انتظر قليلًا ثم أعد المحاولة.',
+      code: 'RATE_LIMITED',
+    },
+  });
+}
+
+async function createRedisRateLimitStore(redisUrl: string): Promise<RedisStore> {
+  const client = createClient({ url: redisUrl });
+  client.on('error', (error) => {
+    console.error('Shared rate-limit store error:', error instanceof Error ? error.message : 'Redis error');
+  });
+  await client.connect();
+  return new RedisStore({
+    prefix: 'vanishai:rate-limit:',
+    sendCommand: (...args: string[]) => client.sendCommand(args) as Promise<RedisReply>,
+  });
+}
 
 export function enforceSameOrigin(req: Request, res: Response, next: NextFunction) {
   if (req.method === 'GET' || req.method === 'HEAD' || req.method === 'OPTIONS') {

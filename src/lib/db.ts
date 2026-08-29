@@ -1,4 +1,5 @@
 import type { BatchItem } from '../types';
+import { createManagedImageUrl } from './image-urls';
 
 const DB_NAME = 'VanishAIDatabase';
 const ITEMS_STORE = 'items';
@@ -71,9 +72,14 @@ export interface WorkSession {
 
 const isSupported = typeof window !== 'undefined' && 'indexedDB' in window;
 const assetIdCache = new Map<string, string>();
-const assetDataUrlCache = new Map<string, string>();
+const assetImageUrlCache = new Map<string, string>();
 const MAX_MEMORY_CACHE_ENTRIES = 300;
 let mutationQueue: Promise<void> = Promise.resolve();
+let pendingArchiveSnapshot: BatchItem[] | null = null;
+let archiveFlushPromise: Promise<void> | null = null;
+const archiveFlushWaiters: Array<{ resolve: () => void; reject: (error: unknown) => void }> = [];
+const GARBAGE_COLLECTION_INTERVAL_MS = 5 * 60 * 1000;
+let lastGarbageCollectionAt = Date.now();
 
 function enqueueMutation<T>(operation: () => Promise<T>): Promise<T> {
   const result = mutationQueue.then(operation, operation);
@@ -136,17 +142,6 @@ function dataUrlToBlob(dataUrl: string): Promise<Blob> {
   });
 }
 
-function blobToDataUrl(blob: Blob): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => typeof reader.result === 'string'
-      ? resolve(reader.result)
-      : reject(new Error('Unable to decode stored image.'));
-    reader.onerror = () => reject(reader.error);
-    reader.readAsDataURL(blob);
-  });
-}
-
 async function sha256(blob: Blob): Promise<string> {
   const digest = await crypto.subtle.digest('SHA-256', await blob.arrayBuffer());
   return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0')).join('');
@@ -206,13 +201,13 @@ async function resolveStoredImage(
   if (value === null) return null;
   if (value === undefined) return undefined;
   if (typeof value === 'string') return value;
-  const cached = assetDataUrlCache.get(value.assetId);
+  const cached = assetImageUrlCache.get(value.assetId);
   if (cached) return cached;
   const blob = assets.get(value.assetId);
   if (!blob) return null;
-  const dataUrl = await blobToDataUrl(blob);
-  remember(assetDataUrlCache, value.assetId, dataUrl);
-  return dataUrl;
+  const imageUrl = createManagedImageUrl(blob);
+  remember(assetImageUrlCache, value.assetId, imageUrl);
+  return imageUrl;
 }
 
 async function resolveStoredImages(
@@ -248,25 +243,82 @@ async function inflateItem(record: StoredBatchItem, assets: Map<string, Blob>): 
   };
 }
 
-async function readStoredState(): Promise<{
+async function readStoredMetadata(): Promise<{
   items: StoredBatchItem[];
   sessions: StoredWorkSession[];
-  assets: Map<string, Blob>;
+}> {
+  const db = await openDB();
+  const transaction = db.transaction([ITEMS_STORE, SESSIONS_STORE], 'readonly');
+  const done = transactionDone(transaction);
+  const [items, sessions] = await Promise.all([
+    requestToPromise(transaction.objectStore(ITEMS_STORE).getAll()) as Promise<StoredBatchItem[]>,
+    requestToPromise(transaction.objectStore(SESSIONS_STORE).getAll()) as Promise<StoredWorkSession[]>,
+  ]);
+  await done;
+  return { items, sessions };
+}
+
+async function loadAssetsForItems(items: StoredBatchItem[]): Promise<Map<string, Blob>> {
+  const assetIds = new Set<string>();
+  items.forEach((item) => {
+    collectAssetIds(item.initialImage, assetIds);
+    collectAssetIds(item.originalImage, assetIds);
+    collectAssetIds(item.editHistory, assetIds);
+    collectAssetIds(item.redoEditHistory, assetIds);
+    collectAssetIds(item.maskedImage, assetIds);
+    collectAssetIds(item.dalleMaskImage, assetIds);
+    collectAssetIds(item.maskOverlayImage, assetIds);
+    collectAssetIds(item.resultImage, assetIds);
+    collectAssetIds(item.variants, assetIds);
+    collectAssetIds(item.inputImages, assetIds);
+  });
+  assetImageUrlCache.forEach((_url, assetId) => assetIds.delete(assetId));
+  if (assetIds.size === 0) return new Map();
+
+  const db = await openDB();
+  const transaction = db.transaction(ASSETS_STORE, 'readonly');
+  const done = transactionDone(transaction);
+  const store = transaction.objectStore(ASSETS_STORE);
+  const records = await Promise.all(Array.from(assetIds, (id) => (
+    requestToPromise(store.get(id)) as Promise<AssetRecord | undefined>
+  )));
+  await done;
+  return new Map(records.filter((record): record is AssetRecord => Boolean(record)).map((record) => [record.id, record.blob]));
+}
+
+async function readStoredItems(): Promise<StoredBatchItem[]> {
+  const db = await openDB();
+  const transaction = db.transaction(ITEMS_STORE, 'readonly');
+  const done = transactionDone(transaction);
+  const items = await requestToPromise(transaction.objectStore(ITEMS_STORE).getAll()) as StoredBatchItem[];
+  await done;
+  return items;
+}
+
+async function readStoredSessions(): Promise<StoredWorkSession[]> {
+  const db = await openDB();
+  const transaction = db.transaction(SESSIONS_STORE, 'readonly');
+  const done = transactionDone(transaction);
+  const sessions = await requestToPromise(transaction.objectStore(SESSIONS_STORE).getAll()) as StoredWorkSession[];
+  await done;
+  return sessions;
+}
+
+async function readGarbageCollectionState(): Promise<{
+  items: StoredBatchItem[];
+  sessions: StoredWorkSession[];
+  assetIds: string[];
 }> {
   const db = await openDB();
   const transaction = db.transaction([ITEMS_STORE, SESSIONS_STORE, ASSETS_STORE], 'readonly');
   const done = transactionDone(transaction);
-  const [items, sessions, assetRecords] = await Promise.all([
+  const [items, sessions, assetKeys] = await Promise.all([
     requestToPromise(transaction.objectStore(ITEMS_STORE).getAll()) as Promise<StoredBatchItem[]>,
     requestToPromise(transaction.objectStore(SESSIONS_STORE).getAll()) as Promise<StoredWorkSession[]>,
-    requestToPromise(transaction.objectStore(ASSETS_STORE).getAll()) as Promise<AssetRecord[]>,
+    requestToPromise(transaction.objectStore(ASSETS_STORE).getAllKeys()),
   ]);
   await done;
-  return {
-    items,
-    sessions,
-    assets: new Map(assetRecords.map((asset) => [asset.id, asset.blob])),
-  };
+  return { items, sessions, assetIds: assetKeys.map(String) };
 }
 
 async function archivedFlagsFor(ids: string[]): Promise<Map<string, boolean>> {
@@ -320,7 +372,7 @@ function sessionItemIdsFor(session: StoredWorkSession): string[] {
 
 async function garbageCollect(): Promise<void> {
   if (!isSupported) return;
-  const { items, sessions, assets } = await readStoredState();
+  const { items, sessions, assetIds } = await readGarbageCollectionState();
   const sessionItemIds = new Set(sessions.flatMap(sessionItemIdsFor));
   const retainedItems = items.filter((item) => item.archived !== false || sessionItemIds.has(item.id));
   const retainedItemIds = new Set(retainedItems.map((item) => item.id));
@@ -346,12 +398,20 @@ async function garbageCollect(): Promise<void> {
   items.forEach((item) => {
     if (!retainedItemIds.has(item.id)) itemStore.delete(item.id);
   });
-  assets.forEach((_blob, id) => {
+  assetIds.forEach((id) => {
     if (!retainedAssetIds.has(id)) assetStore.delete(id);
   });
   await done;
+  lastGarbageCollectionAt = Date.now();
   assetIdCache.clear();
-  assetDataUrlCache.clear();
+}
+
+function maybeGarbageCollect(): void {
+  if (Date.now() - lastGarbageCollectionAt < GARBAGE_COLLECTION_INTERVAL_MS) return;
+  lastGarbageCollectionAt = Date.now();
+  void enqueueMutation(garbageCollect).catch((error) => {
+    console.error('Unable to clean unused image assets:', error);
+  });
 }
 
 async function clearDatabaseNow(): Promise<void> {
@@ -368,7 +428,7 @@ async function clearDatabaseNow(): Promise<void> {
 
 export async function loadAllItems(): Promise<BatchItem[]> {
   if (!isSupported) return [];
-  const { items, assets } = await readStoredState();
+  const { items } = await readStoredMetadata();
   const now = Date.now();
   const activeRecords = items
     .filter((item) => item.archived !== false && now - (item.createdAt || item.storedAt || now) <= ARCHIVE_EXPIRATION_MS)
@@ -391,6 +451,7 @@ export async function loadAllItems(): Promise<BatchItem[]> {
     await done;
   }
 
+  const assets = await loadAssetsForItems(activeRecords);
   const inflated = await Promise.all(activeRecords.map((record) => inflateItem(record, assets)));
   return inflated.filter((item): item is BatchItem => Boolean(item));
 }
@@ -398,7 +459,7 @@ export async function loadAllItems(): Promise<BatchItem[]> {
 async function saveAllItemsNow(items: BatchItem[]): Promise<void> {
   if (!isSupported) return;
   const itemsToSave = items.slice(0, MAX_ARCHIVE_CAPACITY);
-  const existing = (await readStoredState()).items;
+  const existing = await readStoredItems();
   const activeIds = new Set(itemsToSave.map((item) => item.id));
 
   await persistItems(itemsToSave, true);
@@ -411,12 +472,11 @@ async function saveAllItemsNow(items: BatchItem[]): Promise<void> {
     if (record.archived !== false && !activeIds.has(record.id)) store.put({ ...record, archived: false });
   });
   await done;
-  await garbageCollect();
 }
 
 export async function loadAllSessions(): Promise<WorkSession[]> {
   if (!isSupported) return [];
-  const state = await readStoredState();
+  const state = await readStoredMetadata();
   const now = Date.now();
   const validSessions = state.sessions
     .filter((session) => now - (session.updatedAt || session.createdAt || 0) <= SESSION_EXPIRATION_MS)
@@ -441,10 +501,12 @@ export async function loadAllSessions(): Promise<WorkSession[]> {
     session.items?.forEach((item) => inflatedById.set(item.id, item));
   });
   const neededIds = new Set(validSessions.flatMap(sessionItemIdsFor));
+  const neededRecords = Array.from(neededIds, (id) => recordsById.get(id)).filter((record): record is StoredBatchItem => Boolean(record));
+  const assets = await loadAssetsForItems(neededRecords);
   await Promise.all(Array.from(neededIds, async (id) => {
     const record = recordsById.get(id);
     if (!record || inflatedById.has(id)) return;
-    const item = await inflateItem(record, state.assets);
+    const item = await inflateItem(record, assets);
     if (item) inflatedById.set(id, item);
   }));
 
@@ -467,7 +529,7 @@ async function saveWorkSessionNow(session: WorkSession): Promise<void> {
   if (!isSupported || session.items.length === 0) return;
   await persistItems(session.items);
 
-  const existing = (await readStoredState()).sessions
+  const existing = (await readStoredSessions())
     .filter((stored) => stored.id !== session.id)
     .sort((a, b) => b.updatedAt - a.updatedAt);
   const record: StoredWorkSession = {
@@ -516,7 +578,30 @@ export function clearDatabase(): Promise<void> {
 }
 
 export function saveAllItems(items: BatchItem[]): Promise<void> {
-  return enqueueMutation(() => saveAllItemsNow(items));
+  pendingArchiveSnapshot = items.slice(0, MAX_ARCHIVE_CAPACITY);
+  const completion = new Promise<void>((resolve, reject) => {
+    archiveFlushWaiters.push({ resolve, reject });
+  });
+
+  if (!archiveFlushPromise) {
+    archiveFlushPromise = enqueueMutation(async () => {
+      while (pendingArchiveSnapshot) {
+        const snapshot = pendingArchiveSnapshot;
+        pendingArchiveSnapshot = null;
+        await saveAllItemsNow(snapshot);
+      }
+    }).then(() => {
+      archiveFlushWaiters.splice(0).forEach((waiter) => waiter.resolve());
+      maybeGarbageCollect();
+    }, (error) => {
+      archiveFlushWaiters.splice(0).forEach((waiter) => waiter.reject(error));
+    }).finally(() => {
+      archiveFlushPromise = null;
+      if (pendingArchiveSnapshot) void saveAllItems(pendingArchiveSnapshot);
+    });
+  }
+
+  return completion;
 }
 
 export function saveWorkSession(session: WorkSession): Promise<void> {
@@ -533,7 +618,8 @@ export function clearAllWorkSessions(): Promise<void> {
 
 export async function initializeDatabase(): Promise<{ items: BatchItem[]; sessions: WorkSession[] }> {
   if (!isSupported) return { items: [], sessions: [] };
-  const [items, sessions] = await Promise.all([loadAllItems(), loadAllSessions()]);
+  const items = await loadAllItems();
+  const sessions = await loadAllSessions();
   await enqueueMutation(garbageCollect);
   return { items, sessions };
 }

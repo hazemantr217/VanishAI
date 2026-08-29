@@ -1,5 +1,11 @@
 import type { BatchItem } from '../types';
 
+export const MAX_EDIT_HISTORY = 12;
+
+function appendBounded(history: string[], image: string): string[] {
+  return [...history, image].slice(-MAX_EDIT_HISTORY);
+}
+
 function clearGeneratedState(item: BatchItem): BatchItem {
   return {
     ...item,
@@ -18,9 +24,18 @@ export function acceptItemResult(item: BatchItem): BatchItem {
   if (!item.resultImage) return item;
   return clearGeneratedState({
     ...item,
-    editHistory: [...item.editHistory, item.originalImage],
+    editHistory: appendBounded(item.editHistory, item.originalImage),
     redoEditHistory: [],
     originalImage: item.resultImage,
+  });
+}
+
+export function applyImageEdit(item: BatchItem, image: string): BatchItem {
+  return clearGeneratedState({
+    ...item,
+    editHistory: appendBounded(item.editHistory, item.originalImage),
+    redoEditHistory: [],
+    originalImage: image,
   });
 }
 
@@ -34,7 +49,7 @@ export function undoItem(item: BatchItem): BatchItem {
       ...item,
       originalImage: previousImage,
       editHistory,
-      redoEditHistory: [...(item.redoEditHistory || []), item.originalImage],
+      redoEditHistory: appendBounded(item.redoEditHistory || [], item.originalImage),
     });
   }
 
@@ -42,7 +57,7 @@ export function undoItem(item: BatchItem): BatchItem {
     return clearGeneratedState({
       ...item,
       originalImage: item.initialImage,
-      redoEditHistory: [...(item.redoEditHistory || []), item.originalImage],
+      redoEditHistory: appendBounded(item.redoEditHistory || [], item.originalImage),
     });
   }
 
@@ -56,7 +71,7 @@ export function redoItem(item: BatchItem): BatchItem {
   return clearGeneratedState({
     ...item,
     originalImage: nextImage,
-    editHistory: [...item.editHistory, item.originalImage],
+    editHistory: appendBounded(item.editHistory, item.originalImage),
     redoEditHistory,
   });
 }

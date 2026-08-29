@@ -49,7 +49,8 @@ test('IndexedDB storage deduplicates image assets and restores sessions', async 
   await database.saveAllItems([item]);
   const restoredItems = await database.loadAllItems();
   assert.equal(restoredItems.length, 1);
-  assert.equal(restoredItems[0].resultImage, tinyPng);
+  assert.match(restoredItems[0].resultImage || '', /^blob:/);
+  assert.equal((await fetch(restoredItems[0].resultImage!)).status, 200);
 
   await database.saveWorkSession({
     id: 'session-1',
@@ -63,7 +64,7 @@ test('IndexedDB storage deduplicates image assets and restores sessions', async 
   });
   const sessions = await database.loadAllSessions();
   assert.equal(sessions.length, 1);
-  assert.equal(sessions[0].items[0].originalImage, tinyPng);
+  assert.match(sessions[0].items[0].originalImage, /^blob:/);
 
   const openRequest = indexedDB.open('VanishAIDatabase', 3);
   const db = await new Promise<IDBDatabase>((resolve, reject) => {
@@ -77,4 +78,30 @@ test('IndexedDB storage deduplicates image assets and restores sessions', async 
   });
   db.close();
   assert.equal(assetCount, 1);
+});
+
+test('rapid archive writes coalesce and persist the latest snapshot', async () => {
+  const database = await import('./db');
+  const first: BatchItem = {
+    id: 'coalesced-item',
+    initialImage: tinyPng,
+    originalImage: tinyPng,
+    editHistory: [],
+    maskedImage: null,
+    resultImage: null,
+    status: 'pending',
+    createdAt: Date.now(),
+  };
+  const latest = { ...first, status: 'completed' as const, resultImage: tinyPng };
+
+  await Promise.all([
+    database.saveAllItems([first]),
+    database.saveAllItems([latest]),
+    database.saveAllItems([latest]),
+  ]);
+
+  const restored = await database.loadAllItems();
+  const coalesced = restored.find((item) => item.id === first.id);
+  assert.equal(coalesced?.status, 'completed');
+  assert.ok(coalesced?.resultImage);
 });

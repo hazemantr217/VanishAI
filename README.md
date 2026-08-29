@@ -34,7 +34,9 @@ Leave `GEMINI_API_KEY` unset for the default per-user BYOK flow. To test a manag
 3. AI Studio supplies `GEMINI_API_KEY` to the Node.js server automatically.
 4. Run the app. The runtime-config endpoint detects the managed secret, so the key dialog stays hidden.
 
-All Gemini calls remain under `server/providers/gemini.ts`. Do not move provider calls or secrets into `src/`.
+OpenAI choices are deliberately hidden in this managed Google mode. Gemini image generation is not available on Google's Free Tier: the AI Studio project's Billing/Paid Tier must be enabled even though the key itself is injected automatically. Nano Banana 2 Lite supports `1K` only; Nano Banana 2 Flash supports `1K`, `2K`, and `4K`. Google exposes no `3K` output option for these models.
+
+All Gemini calls remain under `server/providers/gemini.ts`. Do not move provider calls or secrets into `src/`. A provider `403` is returned to the UI as a clear Billing/model-access error rather than a generic generation failure.
 
 ## Production
 
@@ -56,6 +58,7 @@ Configuration:
 | `MAX_BATCH_CONCURRENCY` | `2` | Client-advertised batch concurrency, clamped to 1–4. |
 | `API_RATE_LIMIT_MAX` | `40` | API requests per IP in each 10-minute window. |
 | `REQUEST_BODY_LIMIT` | `75mb` | Express JSON limit for metadata and legacy clients; image uploads use bounded multipart files. |
+| `REDIS_URL` | empty | Optional shared rate-limit store for multi-container deployments; single-instance AI Studio needs no extra setting. |
 
 ## Quality and safety checks
 
@@ -72,8 +75,9 @@ npm audit
 ## Architecture
 
 - `src/components/CanvasWorkspace.tsx`: independent full-resolution mask layer, undo/redo, eraser, and worker-backed magic wand.
+- `src/hooks/`: isolated runtime credentials, image processing, presets, persistence, and managed image-URL lifecycles.
 - `src/services/api.ts`: same-origin API client and session-scoped BYOK handling.
-- `src/lib/db.ts`: content-addressed Blob storage in IndexedDB with deduplication and expiry.
+- `src/lib/db.ts`: content-addressed Blob storage in IndexedDB with coalesced writes, deduplication, and bounded garbage collection.
 - `server/api-router.ts`: validated API routes and sanitized errors.
 - `server/providers/`: isolated Gemini and true OpenAI `images.edit` implementations.
 - `src/shared/`: request and model contracts shared by browser and server.

@@ -19,7 +19,7 @@ interface BatchCardProps {
   onImageDoubleClick?: () => void;
 }
 
-export default function BatchCard({
+function BatchCard({
   item,
   idx,
   onDelete,
@@ -468,3 +468,9 @@ export default function BatchCard({
     </motion.div>
   );
 }
+
+export default React.memo(BatchCard, (previous, next) => (
+  previous.item === next.item &&
+  previous.idx === next.idx &&
+  previous.onStop === next.onStop
+));

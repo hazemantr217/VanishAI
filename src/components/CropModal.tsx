@@ -3,6 +3,7 @@ import ReactCrop, { Crop, PixelCrop } from 'react-image-crop';
 import 'react-image-crop/dist/ReactCrop.css';
 import { motion } from 'framer-motion';
 import { Check, X } from 'lucide-react';
+import { canvasToManagedImageUrl } from '../lib/image-urls';
 
 interface CropModalProps {
   imageUrl: string;
@@ -15,7 +16,7 @@ export default function CropModal({ imageUrl, onComplete, onCancel }: CropModalP
   const [completedCrop, setCompletedCrop] = useState<PixelCrop>();
   const imgRef = useRef<HTMLImageElement>(null);
 
-  const handleComplete = () => {
+  const handleComplete = async () => {
     if (completedCrop && imgRef.current) {
       const canvas = document.createElement('canvas');
       const scaleX = imgRef.current.naturalWidth / imgRef.current.width;
@@ -40,8 +41,7 @@ export default function CropModal({ imageUrl, onComplete, onCancel }: CropModalP
           outputWidth,
           outputHeight
         );
-        const base64Image = canvas.toDataURL('image/png');
-        onComplete(base64Image);
+        onComplete(await canvasToManagedImageUrl(canvas));
       }
     } else {
       onComplete(imageUrl); // No crop applied
