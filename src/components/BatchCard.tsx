@@ -2,21 +2,7 @@ import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Trash2, Crop, Download, Loader2, RefreshCw, Sparkles, Eye, Image as ImageIcon, Check, Undo, ZoomIn, Maximize2, StopCircle } from 'lucide-react';
 import { cn } from '../lib/utils';
-
-interface BatchItem {
-  id: string;
-  initialImage: string;
-  originalImage: string;
-  editHistory: string[];
-  redoEditHistory?: string[];
-  maskedImage: string | null;
-  resultImage: string | null;
-  variants?: string[];
-  activeVariantIndex?: number;
-  inputImages?: string[];
-  status: 'pending' | 'processing' | 'completed' | 'error';
-  errorMessage?: string;
-}
+import type { BatchItem } from '../types';
 
 interface BatchCardProps {
   item: BatchItem;

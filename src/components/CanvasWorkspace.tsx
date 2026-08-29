@@ -11,18 +11,62 @@ interface CanvasWorkspaceProps {
   brushHardness: number;
   wandTolerance?: number;
   maskColor: string;
-  onMaskChange: (dataUrl: string, dalleMaskUrl?: string) => void;
+  initialMaskUrl?: string | null;
+  onMaskChange: (dataUrl: string, dalleMaskUrl?: string, maskOverlayUrl?: string) => void;
   clearTrigger: number;
 }
 
-// Highly optimized flood fill algorithm for the smart Magic Wand tool
-function performFloodFill(
+interface LineMaskShape {
+  type: 'line';
+  tool: 'brush' | 'eraser';
+  points: number[];
+  size: number;
+  hardness: number;
+}
+
+interface RectMaskShape {
+  type: 'rect';
+  tool: 'rect';
+  points: number[];
+}
+
+interface BitmapMaskShape {
+  type: 'wand_mask';
+  image: HTMLImageElement;
+}
+
+interface PersistedBitmapMaskShape {
+  type: 'bitmap_mask';
+  image: HTMLImageElement;
+}
+
+type MaskShape = LineMaskShape | RectMaskShape | BitmapMaskShape | PersistedBitmapMaskShape;
+
+function hexToRgb(value: string): [number, number, number] {
+  const hex = value.replace('#', '').padEnd(6, '0');
+  return [
+    Number.parseInt(hex.slice(0, 2), 16),
+    Number.parseInt(hex.slice(2, 4), 16),
+    Number.parseInt(hex.slice(4, 6), 16),
+  ];
+}
+
+function loadHtmlImage(url: string): Promise<HTMLImageElement> {
+  return new Promise((resolve, reject) => {
+    const image = new window.Image();
+    image.onload = () => resolve(image);
+    image.onerror = () => reject(new Error('تعذر تحميل القناع.'));
+    image.src = url;
+  });
+}
+
+async function performFloodFill(
   imageElement: HTMLImageElement,
   startX: number,
   startY: number,
   tolerance: number,
   fillColorHex: string
-): HTMLImageElement | null {
+): Promise<HTMLImageElement | null> {
   const canvas = document.createElement('canvas');
   const w = imageElement.naturalWidth || imageElement.width;
   const h = imageElement.naturalHeight || imageElement.height;
@@ -32,86 +76,38 @@ function performFloodFill(
   const ctx = canvas.getContext('2d');
   if (!ctx) return null;
 
-  // Draw original image to read pixels
   ctx.drawImage(imageElement, 0, 0);
   const imgData = ctx.getImageData(0, 0, w, h);
-  const data = imgData.data;
-
-  // Compute starting coordinate pixel index
   const startXInt = Math.round(startX);
   const startYInt = Math.round(startY);
   if (startXInt < 0 || startXInt >= w || startYInt < 0 || startYInt >= h) return null;
 
-  const startIdx = (startYInt * w + startXInt) * 4;
-  const sr = data[startIdx];
-  const sg = data[startIdx + 1];
-  const sb = data[startIdx + 2];
-
-  // Prepare blank mask image data
-  const maskImgData = ctx.createImageData(w, h);
-  const maskData = maskImgData.data;
-
-  // Parse fill color HEX to RGB
-  const hex = fillColorHex.replace('#', '');
-  const fr = parseInt(hex.substring(0, 2), 16);
-  const fg = parseInt(hex.substring(2, 4), 16);
-  const fb = parseInt(hex.substring(4, 6), 16);
-
-  // Visited pixel tracking
-  const visited = new Uint8Array(w * h);
-
-  // Stack-based iterative DFS (non-recursive to prevent Call Stack Overflow on large images)
-  const stack: [number, number][] = [[startXInt, startYInt]];
-  visited[startYInt * w + startXInt] = 1;
-
-  while (stack.length > 0) {
-    const [cx, cy] = stack.pop()!;
-
-    const idx = (cy * w + cx) * 4;
-    maskData[idx] = fr;
-    maskData[idx + 1] = fg;
-    maskData[idx + 2] = fb;
-    maskData[idx + 3] = 230; // Solid semi-transparent overlay for workspace (230/255)
-
-    const neighbors = [
-      [cx + 1, cy],
-      [cx - 1, cy],
-      [cx, cy + 1],
-      [cx, cy - 1]
-    ];
-
-    for (const [nx, ny] of neighbors) {
-      if (nx >= 0 && nx < w && ny >= 0 && ny < h) {
-        const nIdx = ny * w + nx;
-        if (!visited[nIdx]) {
-          visited[nIdx] = 1;
-          const pixelIdx = nIdx * 4;
-          const r = data[pixelIdx];
-          const g = data[pixelIdx + 1];
-          const b = data[pixelIdx + 2];
-
-          // Euclidean color distance in RGB space
-          const dist = Math.sqrt(
-            (r - sr) * (r - sr) +
-            (g - sg) * (g - sg) +
-            (b - sb) * (b - sb)
-          );
-
-          if (dist <= tolerance) {
-            stack.push([nx, ny]);
-          }
-        }
-      }
-    }
+  const worker = new Worker(new URL('../workers/magicWand.worker.ts', import.meta.url), { type: 'module' });
+  const id = crypto.randomUUID();
+  try {
+    const maskBuffer = await new Promise<ArrayBuffer>((resolve, reject) => {
+      worker.onmessage = (event: MessageEvent<{ id: string; mask: ArrayBuffer }>) => {
+        if (event.data.id === id) resolve(event.data.mask);
+      };
+      worker.onerror = () => reject(new Error('تعذر تشغيل أداة التحديد الذكي.'));
+      worker.postMessage({
+        id,
+        pixels: imgData.data.buffer,
+        width: w,
+        height: h,
+        startX: startXInt,
+        startY: startYInt,
+        tolerance,
+        fillColor: hexToRgb(fillColorHex),
+      }, [imgData.data.buffer]);
+    });
+    const maskPixels = new ImageData(new Uint8ClampedArray(maskBuffer), w, h);
+    ctx.clearRect(0, 0, w, h);
+    ctx.putImageData(maskPixels, 0, 0);
+    return await loadHtmlImage(canvas.toDataURL('image/png'));
+  } finally {
+    worker.terminate();
   }
-
-  // Draw completed mask image
-  ctx.clearRect(0, 0, w, h);
-  ctx.putImageData(maskImgData, 0, 0);
-
-  const maskImg = new window.Image();
-  maskImg.src = canvas.toDataURL('image/png');
-  return maskImg;
 }
 
 export default function CanvasWorkspace({
@@ -122,6 +118,7 @@ export default function CanvasWorkspace({
   brushHardness,
   wandTolerance = 30,
   maskColor,
+  initialMaskUrl,
   onMaskChange,
   clearTrigger,
 }: CanvasWorkspaceProps) {
@@ -151,15 +148,17 @@ export default function CanvasWorkspace({
       img.onerror = null;
     };
   }, [imageUrl]);
-  const stageRef = useRef<any>(null);
-  const layerRef = useRef<any>(null);
-  const cursorLayerRef = useRef<any>(null);
-  const cursorGroupRef = useRef<any>(null);
+  const stageRef = useRef<Konva.Stage | null>(null);
+  const layerRef = useRef<Konva.Layer | null>(null);
+  const cursorLayerRef = useRef<Konva.Layer | null>(null);
+  const cursorGroupRef = useRef<Konva.Group | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const [dimensions, setDimensions] = useState({ width: 0, height: 0 });
   
-  const [lines, setLines] = useState<any[]>([]);
+  const [lines, setLines] = useState<MaskShape[]>([]);
+  const linesRef = useRef<MaskShape[]>([]);
   const [isDrawing, setIsDrawing] = useState(false);
+  const [isWandProcessing, setIsWandProcessing] = useState(false);
   const [stageScale, setStageScale] = useState(1);
   const [stageX, setStageX] = useState(0);
   const [stageY, setStageY] = useState(0);
@@ -191,22 +190,62 @@ export default function CanvasWorkspace({
   
   const actualBrushSize = initialScale > 0 ? brushSize / initialScale : brushSize;
 
-  // Undo/Redo state
-  const [history, setHistory] = useState<any[][]>([[]]);
+  const [history, setHistory] = useState<MaskShape[][]>([[]]);
+  const historyRef = useRef<MaskShape[][]>([[]]);
   const [historyStep, setHistoryStep] = useState(0);
+  const historyStepRef = useRef(0);
+  const onMaskChangeRef = useRef(onMaskChange);
+  const previousClearTriggerRef = useRef(clearTrigger);
 
   useEffect(() => {
-    setLines([]);
-    setHistory([[]]);
-    setHistoryStep(0);
+    onMaskChangeRef.current = onMaskChange;
+  }, [onMaskChange]);
+
+  const setCurrentLines = (nextLines: MaskShape[]) => {
+    linesRef.current = nextLines;
+    setLines(nextLines);
+  };
+
+  const setCurrentHistory = (nextHistory: MaskShape[][], nextStep: number) => {
+    historyRef.current = nextHistory;
+    historyStepRef.current = nextStep;
+    setHistory(nextHistory);
+    setHistoryStep(nextStep);
+  };
+
+  const commitShapes = (nextLines: MaskShape[]) => {
+    setCurrentLines(nextLines);
+    const nextHistory = historyRef.current.slice(0, historyStepRef.current + 1);
+    nextHistory.push(nextLines);
+    setCurrentHistory(nextHistory, nextHistory.length - 1);
+    exportMask(nextLines);
+  };
+
+  useEffect(() => {
+    let cancelled = false;
+    setCurrentLines([]);
+    setCurrentHistory([[]], 0);
+
+    if (initialMaskUrl) {
+      void loadHtmlImage(initialMaskUrl).then((maskImage) => {
+        if (cancelled) return;
+        const restored: MaskShape[] = [{ type: 'bitmap_mask', image: maskImage }];
+        setCurrentLines(restored);
+        setCurrentHistory([[], restored], 1);
+      }).catch((error) => console.error('Unable to restore mask:', error));
+    }
+
+    return () => {
+      cancelled = true;
+    };
   }, [itemId, imageUrl]);
 
   useEffect(() => {
-    if (clearTrigger > 0) {
-      setLines([]);
-      setHistory([[]]);
-      setHistoryStep(0);
-      onMaskChange('');
+    if (clearTrigger !== previousClearTriggerRef.current) {
+      previousClearTriggerRef.current = clearTrigger;
+      setCurrentLines([]);
+      setCurrentHistory([[]], 0);
+      onMaskChangeRef.current('', '', '');
     }
   }, [clearTrigger]);
 
@@ -230,7 +269,7 @@ export default function CanvasWorkspace({
     }
   }, [image, dimensions]);
 
-  const handleMouseDown = (e: any) => {
+  const handleMouseDown = async (e: any) => {
     if (tool === 'pan' || isSpacePressed || e.evt.button === 1 || e.evt.button === 2) {
       if (e.evt.button === 1) {
         const stage = e.target.getStage();
@@ -241,41 +280,40 @@ export default function CanvasWorkspace({
     }
     
     const pos = e.target.getStage().getRelativePointerPosition();
+    if (!pos) return;
     const imgWidth = image ? (image.naturalWidth || image.width || 800) : 800;
     const imgHeight = image ? (image.naturalHeight || image.height || 600) : 600;
     const clampedX = Math.max(0, Math.min(imgWidth, pos.x));
     const clampedY = Math.max(0, Math.min(imgHeight, pos.y));
 
     if (tool === 'wand') {
-      if (!image) return;
-      const maskImg = performFloodFill(image, clampedX, clampedY, wandTolerance, maskColor);
-      if (maskImg) {
-        maskImg.onload = () => {
-          const newLines = [...lines, { type: 'wand_mask', image: maskImg }];
-          setLines(newLines);
-
-          const newHistory = history.slice(0, historyStep + 1);
-          newHistory.push(newLines);
-          setHistory(newHistory);
-          setHistoryStep(newHistory.length - 1);
-          
-          setTimeout(exportMask, 50);
-        };
+      if (!image || isWandProcessing) return;
+      setIsWandProcessing(true);
+      try {
+        const maskImg = await performFloodFill(image, clampedX, clampedY, wandTolerance, maskColor);
+        if (maskImg) {
+          commitShapes([...linesRef.current, { type: 'wand_mask', image: maskImg }]);
+        }
+      } catch (error) {
+        console.error('Magic Wand failed:', error);
+      } finally {
+        setIsWandProcessing(false);
       }
       return;
     }
 
     setIsDrawing(true);
     if (tool === 'rect') {
-      setLines([...lines, { type: 'rect', tool, points: [clampedX, clampedY, clampedX, clampedY] }]);
+      setCurrentLines([...linesRef.current, { type: 'rect', tool, points: [clampedX, clampedY, clampedX, clampedY] }]);
     } else {
-      setLines([...lines, { type: 'line', tool, points: [clampedX, clampedY, clampedX, clampedY], size: actualBrushSize, hardness: brushHardness }]);
+      setCurrentLines([...linesRef.current, { type: 'line', tool, points: [clampedX, clampedY, clampedX, clampedY], size: actualBrushSize, hardness: brushHardness }]);
     }
   };
 
   const handleMouseMove = (e: any) => {
     const stage = e.target.getStage();
     const point = stage.getRelativePointerPosition();
+    if (!point) return;
 
     if (cursorGroupRef.current && cursorLayerRef.current) {
       cursorGroupRef.current.position(point);
@@ -284,24 +322,19 @@ export default function CanvasWorkspace({
 
     if (!isDrawing || tool === 'pan' || isSpacePressed || tool === 'wand') return;
 
-    let lastLine = lines[lines.length - 1];
+    const currentLines = linesRef.current;
+    const lastLine = currentLines[currentLines.length - 1];
+    if (!lastLine || lastLine.type === 'wand_mask' || lastLine.type === 'bitmap_mask') return;
     
     const imgWidth = image ? (image.naturalWidth || image.width || 800) : 800;
     const imgHeight = image ? (image.naturalHeight || image.height || 600) : 600;
     const clampedX = Math.max(0, Math.min(imgWidth, point.x));
     const clampedY = Math.max(0, Math.min(imgHeight, point.y));
 
-    if (lastLine.type === 'rect') {
-      lastLine.points[2] = clampedX;
-      lastLine.points[3] = clampedY;
-    } else {
-      // add point
-      lastLine.points = lastLine.points.concat([clampedX, clampedY]);
-    }
-    
-    // replace last
-    lines.splice(lines.length - 1, 1, lastLine);
-    setLines(lines.concat());
+    const updatedShape: MaskShape = lastLine.type === 'rect'
+      ? { ...lastLine, points: [lastLine.points[0], lastLine.points[1], clampedX, clampedY] }
+      : { ...lastLine, points: [...lastLine.points, clampedX, clampedY] };
+    setCurrentLines([...currentLines.slice(0, -1), updatedShape]);
   };
 
   const handleMouseUp = (e: any) => {
@@ -312,13 +345,7 @@ export default function CanvasWorkspace({
     if (tool === 'pan' || isSpacePressed || e.evt.button === 1 || e.evt.button === 2 || tool === 'wand') return;
     setIsDrawing(false);
     
-    // Save history
-    const newHistory = history.slice(0, historyStep + 1);
-    newHistory.push(lines);
-    setHistory(newHistory);
-    setHistoryStep(newHistory.length - 1);
-    
-    exportMask();
+    commitShapes(linesRef.current);
   };
 
   const handleWheel = (e: any) => {
@@ -327,6 +354,7 @@ export default function CanvasWorkspace({
     const stage = e.target.getStage();
     const oldScale = stage.scaleX();
     const pointer = stage.getPointerPosition();
+    if (!pointer) return;
 
     let newScale = e.evt.deltaY < 0 ? oldScale * scaleBy : oldScale / scaleBy;
     
@@ -350,158 +378,136 @@ export default function CanvasWorkspace({
     setStageY(pointer.y - mousePointTo.y * newScale);
   };
 
-  const exportMask = () => {
-    if (!stageRef.current || !image) return;
-    
-    // Scale down if image is too large (max 2048px on longest side)
-    const MAX_SIZE = 2048;
-    const imgWidth = image.naturalWidth || image.width || 800;
-    const imgHeight = image.naturalHeight || image.height || 600;
-    
-    let scale = 1;
-    if (imgWidth > MAX_SIZE || imgHeight > MAX_SIZE) {
-      scale = MAX_SIZE / Math.max(imgWidth, imgHeight);
+  function exportMask(shapes: MaskShape[]) {
+    if (!image) return;
+    if (shapes.length === 0) {
+      onMaskChangeRef.current('', '', '');
+      return;
     }
 
-    const exportWidth = Math.round(imgWidth * scale);
-    const exportHeight = Math.round(imgHeight * scale);
-
-    // Create a temporary stage to export just the image and lines
-    const tempStage = new Konva.Stage({
+    const exportWidth = image.naturalWidth || image.width || 800;
+    const exportHeight = image.naturalHeight || image.height || 600;
+    const overlayStage = new Konva.Stage({
       container: document.createElement('div'),
       width: exportWidth,
       height: exportHeight,
     });
-    
-    const tempLayer = new Konva.Layer();
-    tempStage.add(tempLayer);
-    
-    // Add image
-    const tempImage = new Konva.Image({
-      image: image,
-      width: exportWidth,
-      height: exportHeight,
-    });
-    tempLayer.add(tempImage);
-    
-    // Add lines and shapes, adjusting coordinates to be relative to the scaled image
-    lines.forEach((shape: any) => {
-      if (shape.type === 'wand_mask') {
-        tempLayer.add(new Konva.Image({
+    const overlayLayer = new Konva.Layer();
+    overlayStage.add(overlayLayer);
+
+    shapes.forEach((shape) => {
+      if (shape.type === 'wand_mask' || shape.type === 'bitmap_mask') {
+        overlayLayer.add(new Konva.Image({
           image: shape.image,
-          x: 0,
-          y: 0,
           width: exportWidth,
           height: exportHeight,
           globalCompositeOperation: 'source-over',
-          opacity: 1
         }));
       } else if (shape.type === 'rect') {
-        const x = Math.min(shape.points[0], shape.points[2]) * scale;
-        const y = Math.min(shape.points[1], shape.points[3]) * scale;
-        const width = Math.abs(shape.points[2] - shape.points[0]) * scale;
-        const height = Math.abs(shape.points[3] - shape.points[1]) * scale;
-        tempLayer.add(new Konva.Rect({
-          x,
-          y,
-          width,
-          height,
+        overlayLayer.add(new Konva.Rect({
+          x: Math.min(shape.points[0], shape.points[2]),
+          y: Math.min(shape.points[1], shape.points[3]),
+          width: Math.abs(shape.points[2] - shape.points[0]),
+          height: Math.abs(shape.points[3] - shape.points[1]),
           fill: maskColor,
-          globalCompositeOperation: shape.tool === 'eraser' ? 'destination-out' : 'source-over',
-          opacity: 1
+          globalCompositeOperation: 'source-over',
         }));
       } else {
-        const scaledPoints = shape.points.map((p: number) => p * scale);
-        tempLayer.add(new Konva.Line({
-          points: scaledPoints,
+        overlayLayer.add(new Konva.Line({
+          points: shape.points,
           stroke: maskColor,
-          strokeWidth: shape.size * scale,
+          strokeWidth: shape.size,
           tension: 0.5,
-          lineCap: "round",
-          lineJoin: "round",
+          lineCap: 'round',
+          lineJoin: 'round',
           globalCompositeOperation: shape.tool === 'eraser' ? 'destination-out' : 'source-over',
           opacity: shape.tool === 'eraser' ? 1 : (shape.hardness / 100) * 0.8 + 0.2,
-          shadowBlur: shape.tool === 'eraser' ? 0 : ((100 - shape.hardness) / 2) * scale,
-          shadowColor: maskColor
+          shadowBlur: shape.tool === 'eraser' ? 0 : (100 - shape.hardness) / 2,
+          shadowColor: maskColor,
         }));
       }
     });
-    
-    tempLayer.draw();
-    
-    // Export standard masked image
-    const dataUrl = tempStage.toDataURL({ pixelRatio: 1, mimeType: 'image/jpeg', quality: 0.9 });
-    
-    // Create a temporary stage to export just the transparent mask for DALL-E 2
-    const maskStage = new Konva.Stage({
+    overlayLayer.add(new Konva.Rect({
+      x: 0,
+      y: 0,
+      width: exportWidth,
+      height: exportHeight,
+      fill: maskColor,
+      globalCompositeOperation: 'source-in',
+    }));
+    overlayLayer.draw();
+
+    const maskOverlayUrl = overlayStage.toDataURL({ pixelRatio: 1, mimeType: 'image/png' });
+    const maskedCanvas = document.createElement('canvas');
+    maskedCanvas.width = exportWidth;
+    maskedCanvas.height = exportHeight;
+    const maskedContext = maskedCanvas.getContext('2d', { alpha: true });
+    if (!maskedContext) {
+      overlayStage.destroy();
+      return;
+    }
+    maskedContext.drawImage(image, 0, 0, exportWidth, exportHeight);
+    maskedContext.drawImage(overlayStage.toCanvas({ pixelRatio: 1 }), 0, 0);
+    const dataUrl = maskedCanvas.toDataURL('image/png');
+
+    const dalleStage = new Konva.Stage({
       container: document.createElement('div'),
       width: exportWidth,
       height: exportHeight,
     });
-    
-    const maskLayer = new Konva.Layer();
-    maskStage.add(maskLayer);
-    
-    // Draw solid black background (represents non-edited parts, opaque)
-    const bgRect = new Konva.Rect({
+    const dalleLayer = new Konva.Layer();
+    dalleStage.add(dalleLayer);
+    dalleLayer.add(new Konva.Rect({
       x: 0,
       y: 0,
       width: exportWidth,
       height: exportHeight,
       fill: 'black',
-      opacity: 1
-    });
-    maskLayer.add(bgRect);
-    
-    // Draw mask lines/shapes with globalCompositeOperation: 'destination-out' to clear transparency
-    lines.forEach((shape: any) => {
-      if (shape.type === 'wand_mask') {
-        maskLayer.add(new Konva.Image({
+    }));
+
+    shapes.forEach((shape) => {
+      if (shape.type === 'wand_mask' || shape.type === 'bitmap_mask') {
+        dalleLayer.add(new Konva.Image({
           image: shape.image,
-          x: 0,
-          y: 0,
           width: exportWidth,
           height: exportHeight,
           globalCompositeOperation: 'destination-out',
-          opacity: 1
         }));
       } else if (shape.type === 'rect') {
-        const x = Math.min(shape.points[0], shape.points[2]) * scale;
-        const y = Math.min(shape.points[1], shape.points[3]) * scale;
-        const width = Math.abs(shape.points[2] - shape.points[0]) * scale;
-        const height = Math.abs(shape.points[3] - shape.points[1]) * scale;
-        maskLayer.add(new Konva.Rect({
-          x,
-          y,
-          width,
-          height,
+        dalleLayer.add(new Konva.Rect({
+          x: Math.min(shape.points[0], shape.points[2]),
+          y: Math.min(shape.points[1], shape.points[3]),
+          width: Math.abs(shape.points[2] - shape.points[0]),
+          height: Math.abs(shape.points[3] - shape.points[1]),
           fill: 'black',
           globalCompositeOperation: 'destination-out',
-          opacity: 1
         }));
       } else {
-        const scaledPoints = shape.points.map((p: number) => p * scale);
-        maskLayer.add(new Konva.Line({
-          points: scaledPoints,
+        dalleLayer.add(new Konva.Line({
+          points: shape.points,
           stroke: 'black',
-          strokeWidth: shape.size * scale,
+          strokeWidth: shape.size,
           tension: 0.5,
-          lineCap: "round",
-          lineJoin: "round",
-          globalCompositeOperation: 'destination-out',
-          opacity: 1
+          lineCap: 'round',
+          lineJoin: 'round',
+          globalCompositeOperation: shape.tool === 'eraser' ? 'source-over' : 'destination-out',
+          opacity: shape.tool === 'eraser' ? 1 : (shape.hardness / 100) * 0.8 + 0.2,
         }));
       }
     });
-    
-    maskLayer.draw();
-    const dalleMaskUrl = maskStage.toDataURL({ pixelRatio: 1, mimeType: 'image/png' });
-    
-    onMaskChange(dataUrl, dalleMaskUrl);
-    
-    tempStage.destroy();
-    maskStage.destroy();
-  };
+    dalleLayer.draw();
+    const dalleMaskUrl = dalleStage.toDataURL({ pixelRatio: 1, mimeType: 'image/png' });
+
+    onMaskChangeRef.current(dataUrl, dalleMaskUrl, maskOverlayUrl);
+    overlayStage.destroy();
+    dalleStage.destroy();
+  }
+
+  useEffect(() => {
+    if (image && linesRef.current.length > 0) {
+      exportMask(linesRef.current);
+    }
+  }, [image, maskColor]);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -512,23 +518,16 @@ export default function CanvasWorkspace({
       }
       if (e.ctrlKey || e.metaKey) {
         const keyLower = e.key ? e.key.toLowerCase() : '';
-        const isZ = keyLower === 'z' || e.code === 'KeyZ' || e.key === 'ئ' || e.key === 'ئ';
+        const isZ = keyLower === 'z' || e.code === 'KeyZ' || e.key === 'ئ';
         if (isZ) {
           e.preventDefault();
-          if (e.shiftKey) {
-            // Redo
-            if (historyStep < history.length - 1) {
-              setHistoryStep(historyStep + 1);
-              setLines(history[historyStep + 1]);
-              setTimeout(exportMask, 50);
-            }
-          } else {
-            // Undo
-            if (historyStep > 0) {
-              setHistoryStep(historyStep - 1);
-              setLines(history[historyStep - 1]);
-              setTimeout(exportMask, 50);
-            }
+          const direction = e.shiftKey ? 1 : -1;
+          const nextStep = historyStepRef.current + direction;
+          if (nextStep >= 0 && nextStep < historyRef.current.length) {
+            const snapshot = historyRef.current[nextStep];
+            setCurrentLines(snapshot);
+            setCurrentHistory(historyRef.current, nextStep);
+            exportMask(snapshot);
           }
         }
       }
@@ -544,7 +543,7 @@ export default function CanvasWorkspace({
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('keyup', handleKeyUp);
     };
-  }, [history, historyStep]);
+  }, [image, maskColor]);
 
   return (
     <div ref={containerRef} className="absolute inset-2 sm:inset-6 overflow-hidden rounded-2xl bg-black/20 touch-none" id="canvas-container">
@@ -561,8 +560,8 @@ export default function CanvasWorkspace({
             width={dimensions.width}
             height={dimensions.height}
             onMouseDown={handleMouseDown}
-            onMousemove={handleMouseMove}
-            onMouseup={handleMouseUp}
+            onMouseMove={handleMouseMove}
+            onMouseUp={handleMouseUp}
             onTouchStart={handleMouseDown}
             onTouchMove={handleMouseMove}
             onTouchEnd={handleMouseUp}
@@ -597,7 +596,7 @@ export default function CanvasWorkspace({
             clipHeight={image ? (image.naturalHeight || image.height) : 600}
           >
             {lines.map((shape, i) => {
-              if (shape.type === 'wand_mask') {
+              if (shape.type === 'wand_mask' || shape.type === 'bitmap_mask') {
                 return (
                   <KonvaImage
                     key={i}

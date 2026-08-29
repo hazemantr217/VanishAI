@@ -1,16 +1,23 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Upload, Image as ImageIcon, Eraser, Move, Download, Loader2, Undo, Redo, Settings2, Crop as CropIcon, Trash2, Eye, History, Square, Wand2, Database, X, Pencil, Check, ChevronUp, ChevronDown, StopCircle, Archive, RotateCcw, FileArchive, FolderArchive, Clock, Layers, Save, CheckCircle } from 'lucide-react';
-import JSZip from 'jszip';
+import { Upload, Image as ImageIcon, Eraser, Move, Download, Loader2, Undo, Redo, Settings2, Crop as CropIcon, Trash2, Eye, History, Square, Wand2, Database, X, Pencil, Check, ChevronUp, ChevronDown, StopCircle, Archive, RotateCcw, FileArchive, FolderArchive, Clock, Layers, Save, CheckCircle, Sparkles, RefreshCw, CheckCircle2, AlertCircle, KeyRound, ShieldCheck } from 'lucide-react';
 import CanvasWorkspace from './components/CanvasWorkspace';
 import CropModal from './components/CropModal';
 import BatchCard from './components/BatchCard';
 import ImageLightbox from './components/ImageLightbox';
 import AspectRatioSelector from './components/AspectRatioSelector';
+import ApiKeyDialog from './components/ApiKeyDialog';
 import { cn } from './lib/utils';
 import { v4 as uuidv4 } from 'uuid';
-import { GoogleGenAI } from '@google/genai';
-import { Sparkles, RefreshCw, CheckCircle2, AlertCircle } from 'lucide-react';
+import type { BatchItem, Preset } from './types';
+import type { RuntimeConfig } from './shared/api';
+import type { AspectRatio, ImageModel, ImageSize } from './shared/models';
+import { GEMINI_IMAGE_MODELS, isOpenAIModel, isSupportedAspectRatio, supportsImageSize } from './shared/models';
+import { clearSessionGeminiApiKey, getRuntimeConfig, hasSessionGeminiApiKey, requestBatchMerge, requestInpaint, setSessionGeminiApiKey } from './services/api';
+import { dataUrlExtension, filesToBatchItems, filenameForDataUrl, lockPixelsOutsideMask, toPngDataUrl } from './lib/images';
+import { mapWithConcurrency } from './lib/concurrency';
+import { acceptItemResult, redoItem, undoItem } from './lib/items';
+import { DEFAULT_PRESETS } from './data/default-presets';
 import { 
   initializeDatabase, 
   saveAllItems, 
@@ -23,30 +30,6 @@ import {
   MAX_SESSIONS_COUNT,
   WorkSession 
 } from './lib/db';
-
-interface BatchItem {
-  id: string;
-  initialImage: string;
-  originalImage: string;
-  editHistory: string[];
-  redoEditHistory?: string[];
-  maskedImage: string | null;
-  dalleMaskImage?: string | null;
-  resultImage: string | null;
-  variants?: string[];
-  activeVariantIndex?: number;
-  inputImages?: string[];
-  status: 'pending' | 'processing' | 'completed' | 'error';
-  errorMessage?: string;
-  createdAt?: number;
-}
-
-interface Preset {
-  name: string;
-  prompt: string;
-  ratio: string;
-  isCustom?: boolean;
-}
 
 export default function App() {
   const [items, setItems] = useState<BatchItem[]>([]);
@@ -65,11 +48,11 @@ export default function App() {
   const [maskColor, setMaskColor] = useState('#00FF00');
   const [prompt, setPrompt] = useState('');
   const [selectedPresetName, setSelectedPresetName] = useState<string | null>(null);
-  const [selectedModel, setSelectedModel] = useState<'gemini-3.1-flash-lite-image' | 'gemini-3.1-flash-image'>(() => {
+  const [selectedModel, setSelectedModel] = useState<ImageModel>(() => {
     try {
       const saved = localStorage.getItem('vanishai_selected_model');
-      if (saved === 'gemini-3.1-flash-image' || saved === 'gemini-3.1-flash-lite-image') {
-        return saved;
+      if (saved && (GEMINI_IMAGE_MODELS as readonly string[]).includes(saved)) {
+        return saved as ImageModel;
       }
     } catch (e) {
       console.error(e);
@@ -84,6 +67,17 @@ export default function App() {
       console.error(e);
     }
   }, [selectedModel]);
+  const [imageSize, setImageSize] = useState<ImageSize>(() => {
+    const saved = localStorage.getItem('vanishai_image_size');
+    return saved === '2K' || saved === '4K' ? saved : '1K';
+  });
+
+  useEffect(() => {
+    localStorage.setItem('vanishai_image_size', imageSize);
+  }, [imageSize]);
+  useEffect(() => {
+    if (!supportsImageSize(selectedModel, imageSize)) setImageSize('1K');
+  }, [selectedModel, imageSize]);
   const [enableOutpainting, setEnableOutpainting] = useState(false);
   const [outpaintPreserve2D, setOutpaintPreserve2D] = useState(true);
   const [similarityLevel, setSimilarityLevel] = useState<'high' | 'medium' | 'low'>('high');
@@ -94,7 +88,10 @@ export default function App() {
   const [clearTrigger, setClearTrigger] = useState(0);
   const [isDragging, setIsDragging] = useState(false);
   const [isComparing, setIsComparing] = useState(false);
-  const [connectionMode, setConnectionMode] = useState<'client' | 'server'>('client');
+  const [runtimeConfig, setRuntimeConfig] = useState<RuntimeConfig | null>(null);
+  const [runtimeConfigError, setRuntimeConfigError] = useState('');
+  const [showApiKeyDialog, setShowApiKeyDialog] = useState(false);
+  const [hasUserApiKey, setHasUserApiKey] = useState(() => hasSessionGeminiApiKey());
   const [lightboxItemId, setLightboxItemId] = useState<string | null>(null);
   const lightboxItem = items.find(i => i.id === lightboxItemId);
   const lightboxItemIdx = items.findIndex(i => i.id === lightboxItemId);
@@ -131,7 +128,7 @@ export default function App() {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [quickPreviewImage, setQuickPreviewImage] = useState<string | null>(null);
-  const longPressTimeoutRef = useRef<any>(null);
+  const longPressTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isLongPressActiveRef = useRef<boolean>(false);
   const blockClickRef = useRef<boolean>(false);
 
@@ -140,6 +137,49 @@ export default function App() {
   const [showDownloadMenu, setShowDownloadMenu] = useState(false);
   const abortControllerRef = useRef<AbortController | null>(null);
   const isAbortedRef = useRef<boolean>(false);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    void getRuntimeConfig(controller.signal).then((config) => {
+      setRuntimeConfig(config);
+      setRuntimeConfigError('');
+      if (config.geminiCredentialMode === 'byok' && !hasSessionGeminiApiKey()) {
+        setShowApiKeyDialog(true);
+      }
+    }).catch((error) => {
+      if (error instanceof Error && error.name === 'AbortError') return;
+      setRuntimeConfig({
+        geminiCredentialMode: 'byok',
+        openaiAvailable: false,
+        maxBatchConcurrency: 2,
+      });
+      setRuntimeConfigError('تعذر قراءة إعدادات الخادم. أعد تحميل الصفحة إذا استمرت المشكلة.');
+      if (!hasSessionGeminiApiKey()) setShowApiKeyDialog(true);
+    });
+    return () => controller.abort();
+  }, []);
+
+  const requiresUserApiKey = runtimeConfig?.geminiCredentialMode === 'byok';
+
+  const ensureCredentials = () => {
+    if (requiresUserApiKey && !hasSessionGeminiApiKey()) {
+      setShowApiKeyDialog(true);
+      return false;
+    }
+    return true;
+  };
+
+  const handleSaveApiKey = (apiKey: string) => {
+    setSessionGeminiApiKey(apiKey);
+    setHasUserApiKey(true);
+    setShowApiKeyDialog(false);
+  };
+
+  const handleForgetApiKey = () => {
+    clearSessionGeminiApiKey();
+    setHasUserApiKey(false);
+    if (requiresUserApiKey) setShowApiKeyDialog(true);
+  };
 
   const handleForceStop = () => {
     isAbortedRef.current = true;
@@ -218,88 +258,7 @@ export default function App() {
 
   const [presets, setPresets] = useState<Preset[]>(() => {
     const saved = localStorage.getItem('vanishai_all_presets');
-    const defaultPresets: Preset[] = [
-      {
-        name: "🌟 النمط الإعلاني الشامل (لكافة المنتجات والمشاهد)",
-        prompt: "A masterwork cinematic commercial advertising shot. Transform and elevate the subject with high-end studio volumetric lighting, dramatic depth of field bokeh, vibrant natural color grading, pristine sharp details, subtle atmospheric particle lighting, realistic reflections, and hyper-realistic professional advertising presentation.",
-        ratio: "original"
-      },
-      {
-        name: "🚀 إعلان تجاري سينمائي (منتج حركي طاير بالأجواء)",
-        prompt: "A dynamic commercial advertisement shot. The main product is floating suspended in mid-air with gravity-defying motion energy, surrounded by flying thematic particles, subtle motion blur, floating pedestal podium, volumetric cinematic studio backlighting, dramatic rim lighting, depth of field bokeh, vibrant commercial color palette, 8k resolution masterwork.",
-        ratio: "1:1"
-      },
-      {
-        name: "✨ إعلان منتج فاخر في استوديو احترافي (Luxury Studio)",
-        prompt: "High-end commercial product photography shot, centered on an elegant dark marble or sleek concrete pedestal podium, warm volumetric studio softbox lighting, crisp reflections, subtle atmospheric fog/smoke, dramatic rim light highlighting product contours, shallow depth of field, 8k advertising masterpiece.",
-        ratio: "1:1"
-      },
-      {
-        name: "💥 إعلان حركي مع تطاير سوائل وعناصر (Action Splash)",
-        prompt: "High-speed dynamic commercial advertisement photo. The product is suspended in action, surrounded by exploding water splashes, floating droplets, fresh organic ingredients flying in mid-air around it, vibrant energetic background, frozen high-speed splash action, professional commercial studio lighting, ultra-realistic 8k.",
-        ratio: "1:1"
-      },
-      {
-        name: "🍔 إعلان مأكولات ومشروبات ديناميكي (Levitating Food Ad)",
-        prompt: "An extraordinary cinematic food advertisement. The product/meal is levitating dynamically with steam rising, surrounded by floating ingredient splashes, spicy dust, flying spices or sesame, vibrant colorful background with creative advertising props, commercial studio photography with dramatic lighting, 8k hyper-realistic details.",
-        ratio: "1:1"
-      },
-      {
-        name: "🌿 إعلان منتجات العناية والتجميل (Natural Organic Beauty)",
-        prompt: "Commercial advertisement shot for a beauty/organic product, levitating gracefully above a natural stone slab surrounded by fresh green leaves, soft golden hour sunlight filtering through palm shadows, organic floating water droplets, fresh aesthetic, high resolution 8k.",
-        ratio: "3:4"
-      },
-      {
-        name: "📱 إعلان إلكترونيات وتقنية سينمائي (3D Tech & Gadget Ad)",
-        prompt: "Cinematic 3D commercial product render for tech and electronics. Floating product with glowing accent lights, sleek metallic and glass reflections, floating exploded layers or futuristic light rays, clean vibrant studio backdrop, hyper-detailed commercial advertising photography.",
-        ratio: "1:1"
-      },
-      {
-        name: "🌸 دمج الإضاءة والواقعية (Seamless Blend)",
-        prompt: "Seamlessly blend the foreground object with the background lighting and atmosphere, matching color temperature, color cast reflection, consistent global illumination, hyper-realistic composition, unified depth of field, 8k resolution",
-        ratio: "original"
-      },
-      {
-        name: "🚀 جودة فائقة وتحسين التفاصيل",
-        prompt: "Recreate this image in extremely high quality, adding ultra-fine realistic details, cinematic lighting, and professional sharp focus.",
-        ratio: "original"
-      },
-      {
-        name: "📸 بورتريه سينمائي واقعي",
-        prompt: "A professional high-fidelity cinematic close-up portrait, detailed skin texture, beautiful volumetric studio lighting, realistic reflections, shallow depth of field, sharp focus, 8k resolution.",
-        ratio: "3:4"
-      },
-      {
-        name: "🎨 لوجو ديجيتال خلفية بيضاء",
-        prompt: "Recreate this logo/design in extremely high quality as a clean digital vector graphic with a solid flat white background, sharp edges, and professional modern design.",
-        ratio: "1:1"
-      },
-      {
-        name: "👾 طابع السايبربانك المضيء",
-        prompt: "Reimagine the scene with a vibrant cyberpunk aesthetic, futuristic neon glow, wet streets reflecting neon lights, high-tech details, dark moody atmosphere.",
-        ratio: "16:9"
-      },
-      {
-        name: "✏️ رسم فني قلم رصاص",
-        prompt: "Reimagine this as an elegant, highly detailed hand-drawn charcoal pencil sketch on light textured paper, clean artistic cross-hatching, expressive shading, fine art masterpiece.",
-        ratio: "original"
-      },
-      {
-        name: "🏢 تصميم معماري 3D",
-        prompt: "A clean professional 3D architectural rendering of this scene, modern exterior design, realistic glass and concrete textures, elegant landscaping, professional lighting, photorealistic.",
-        ratio: "16:9"
-      },
-      {
-        name: "✏️ أنمي ورسم كرتوني ثلاثي الأبعاد",
-        prompt: "Recreate this in a stunning 3D Pixar/Disney animated movie style, warm friendly lighting, beautiful stylized 3D character and environment design, high-quality textures.",
-        ratio: "1:1"
-      },
-      {
-        name: "🧹 تنظيف الصورة وإزالة النويز",
-        prompt: "Clean up the image, remove any minor artifacts or noise, increase sharpness, and output a highly clean, polished high-resolution version.",
-        ratio: "original"
-      }
-    ];
+    const defaultPresets = DEFAULT_PRESETS;
     if (saved) {
       try {
         const parsed = JSON.parse(saved);
@@ -419,89 +378,7 @@ export default function App() {
   const handleResetPresets = () => {
     if (window.confirm("هل أنت متأكد من رغبتك في استعادة قائمة الأنماط الافتراضية وحذف الأنماط المضافة؟")) {
       localStorage.removeItem('vanishai_all_presets');
-      const defaultPresets: Preset[] = [
-        {
-          name: "🌟 النمط الإعلاني الشامل (لكافة المنتجات والمشاهد)",
-          prompt: "A masterwork cinematic commercial advertising shot. Transform and elevate the subject with high-end studio volumetric lighting, dramatic depth of field bokeh, vibrant natural color grading, pristine sharp details, subtle atmospheric particle lighting, realistic reflections, and hyper-realistic professional advertising presentation.",
-          ratio: "original"
-        },
-        {
-          name: "🚀 إعلان تجاري سينمائي (منتج حركي طاير بالأجواء)",
-          prompt: "A dynamic commercial advertisement shot. The main product is floating suspended in mid-air with gravity-defying motion energy, surrounded by flying thematic particles, subtle motion blur, floating pedestal podium, volumetric cinematic studio backlighting, dramatic rim lighting, depth of field bokeh, vibrant commercial color palette, 8k resolution masterwork.",
-          ratio: "1:1"
-        },
-        {
-          name: "✨ إعلان منتج فاخر في استوديو احترافي (Luxury Studio)",
-          prompt: "High-end commercial product photography shot, centered on an elegant dark marble or sleek concrete pedestal podium, warm volumetric studio softbox lighting, crisp reflections, subtle atmospheric fog/smoke, dramatic rim light highlighting product contours, shallow depth of field, 8k advertising masterpiece.",
-          ratio: "1:1"
-        },
-        {
-          name: "💥 إعلان حركي مع تطاير سوائل وعناصر (Action Splash)",
-          prompt: "High-speed dynamic commercial advertisement photo. The product is suspended in action, surrounded by exploding water splashes, floating droplets, fresh organic ingredients flying in mid-air around it, vibrant energetic background, frozen high-speed splash action, professional commercial studio lighting, ultra-realistic 8k.",
-          ratio: "1:1"
-        },
-        {
-          name: "🍔 إعلان مأكولات ومشروبات ديناميكي (Levitating Food Ad)",
-          prompt: "An extraordinary cinematic food advertisement. The product/meal is levitating dynamically with steam rising, surrounded by floating ingredient splashes, spicy dust, flying spices or sesame, vibrant colorful background with creative advertising props, commercial studio photography with dramatic lighting, 8k hyper-realistic details.",
-          ratio: "1:1"
-        },
-        {
-          name: "🌿 إعلان منتجات العناية والتجميل (Natural Organic Beauty)",
-          prompt: "Commercial advertisement shot for a beauty/organic product, levitating gracefully above a natural stone slab surrounded by fresh green leaves, soft golden hour sunlight filtering through palm shadows, organic floating water droplets, fresh aesthetic, high resolution 8k.",
-          ratio: "3:4"
-        },
-        {
-          name: "📱 إعلان إلكترونيات وتقنية سينمائي (3D Tech & Gadget Ad)",
-          prompt: "Cinematic 3D commercial product render for tech and electronics. Floating product with glowing accent lights, sleek metallic and glass reflections, floating exploded layers or futuristic light rays, clean vibrant studio backdrop, hyper-detailed commercial advertising photography.",
-          ratio: "1:1"
-        },
-        {
-          name: "🌸 دمج الإضاءة والواقعية (Seamless Blend)",
-          prompt: "Seamlessly blend the foreground object with the background lighting and atmosphere, matching color temperature, color cast reflection, consistent global illumination, hyper-realistic composition, unified depth of field, 8k resolution",
-          ratio: "original"
-        },
-        {
-          name: "🚀 جودة فائقة وتحسين التفاصيل",
-          prompt: "Recreate this image in extremely high quality, adding ultra-fine realistic details, cinematic lighting, and professional sharp focus.",
-          ratio: "original"
-        },
-        {
-          name: "📸 بورتريه سينمائي واقعي",
-          prompt: "A professional high-fidelity cinematic close-up portrait, detailed skin texture, beautiful volumetric studio lighting, realistic reflections, shallow depth of field, sharp focus, 8k resolution.",
-          ratio: "3:4"
-        },
-        {
-          name: "🎨 لوجو ديجيتال خلفية بيضاء",
-          prompt: "Recreate this logo/design in extremely high quality as a clean digital vector graphic with a solid flat white background, sharp edges, and professional modern design.",
-          ratio: "1:1"
-        },
-        {
-          name: "👾 طابع السايبربانك المضيء",
-          prompt: "Reimagine the scene with a vibrant cyberpunk aesthetic, futuristic neon glow, wet streets reflecting neon lights, high-tech details, dark moody atmosphere.",
-          ratio: "16:9"
-        },
-        {
-          name: "✏️ رسم فني قلم رصاص",
-          prompt: "Reimagine this as an elegant, highly detailed hand-drawn charcoal pencil sketch on light textured paper, clean artistic cross-hatching, expressive shading, fine art masterpiece.",
-          ratio: "original"
-        },
-        {
-          name: "🏢 تصميم معماري 3D",
-          prompt: "A clean professional 3D architectural rendering of this scene, modern exterior design, realistic glass and concrete textures, elegant landscaping, professional lighting, photorealistic.",
-          ratio: "16:9"
-        },
-        {
-          name: "✏️ أنمي ورسم كرتوني ثلاثي الأبعاد",
-          prompt: "Recreate this in a stunning 3D Pixar/Disney animated movie style, warm friendly lighting, beautiful stylized 3D character and environment design, high-quality textures.",
-          ratio: "1:1"
-        },
-        {
-          name: "🧹 تنظيف الصورة وإزالة النويز",
-          prompt: "Clean up the image, remove any minor artifacts or noise, increase sharpness, and output a highly clean, polished high-resolution version.",
-          ratio: "original"
-        }
-      ];
-      setPresets(defaultPresets);
+      setPresets(DEFAULT_PRESETS);
       handleCancelEditPreset();
     }
   };
@@ -531,7 +408,7 @@ export default function App() {
     initDatabaseState();
   }, []);
 
-  // Sync dbItems state to IndexedDB and enforce 100-image capacity limit
+  // Debounced incremental persistence keeps large image writes off the hot render path.
   useEffect(() => {
     if (!isDbLoaded) return;
 
@@ -540,41 +417,25 @@ export default function App() {
       return;
     }
 
-    saveAllItems(dbItems as any);
-    localStorage.setItem('vanishai_last_active', Date.now().toString());
+    const timer = window.setTimeout(() => {
+      void saveAllItems(dbItems).catch((error) => {
+        console.error('Failed to persist the image archive:', error);
+      });
+    }, 500);
+    return () => window.clearTimeout(timer);
   }, [dbItems, isDbLoaded]);
 
   // Automatically add or update active session items inside the database archive (up to 100 images)
   useEffect(() => {
     if (!isDbLoaded || items.length === 0) return;
 
-    let changed = false;
-    const updatedDbItems = [...dbItems];
-
-    items.forEach(item => {
-      const existingIdx = updatedDbItems.findIndex(dbItem => dbItem.id === item.id);
-      if (existingIdx > -1) {
-        const dbItem = updatedDbItems[existingIdx];
-        if (
-          dbItem.status !== item.status ||
-          dbItem.resultImage !== item.resultImage ||
-          dbItem.maskedImage !== item.maskedImage ||
-          JSON.stringify(dbItem.editHistory) !== JSON.stringify(item.editHistory) ||
-          JSON.stringify(dbItem.variants) !== JSON.stringify(item.variants) ||
-          dbItem.activeVariantIndex !== item.activeVariantIndex
-        ) {
-          updatedDbItems[existingIdx] = { ...item };
-          changed = true;
-        }
-      } else {
-        updatedDbItems.unshift({ ...item });
-        changed = true;
-      }
+    setDbItems((previousItems) => {
+      const activeIds = new Set(items.map((item) => item.id));
+      return [
+        ...items,
+        ...previousItems.filter((item) => !activeIds.has(item.id)),
+      ].slice(0, MAX_ARCHIVE_CAPACITY);
     });
-
-    if (changed) {
-      setDbItems(updatedDbItems.slice(0, MAX_ARCHIVE_CAPACITY));
-    }
   }, [items, isDbLoaded]);
 
   // Auto-save the active work session snapshot (keeping up to last 5 sessions, auto-expires in 3 days)
@@ -699,6 +560,18 @@ export default function App() {
     }
   }, []);
 
+  const addImageFiles = async (files: File[]) => {
+    const { items: loadedItems, failedFiles } = await filesToBatchItems(files, uuidv4);
+    if (loadedItems.length > 0) {
+      setItems((previousItems) => [...loadedItems, ...previousItems]);
+      setActiveItemId(loadedItems[0].id);
+    }
+    if (failedFiles.length > 0) {
+      console.error('Failed image files:', failedFiles);
+      window.alert(`تعذر تحميل ${failedFiles.length} ملف صورة.`);
+    }
+  };
+
   useEffect(() => {
     const handlePaste = (e: ClipboardEvent) => {
       // If user is actively typing in a standard text field, let them paste text normally, Unless there are files.
@@ -717,34 +590,7 @@ export default function App() {
         if (files.length === 0) return;
 
         e.preventDefault();
-        const loadedItems: BatchItem[] = [];
-        let processed = 0;
-
-        files.forEach((file, idx) => {
-          const reader = new FileReader();
-          reader.onload = (event) => {
-            if (event.target?.result) {
-              loadedItems.push({
-                id: uuidv4(),
-                initialImage: event.target.result as string,
-                originalImage: event.target.result as string,
-                editHistory: [],
-                maskedImage: null,
-                resultImage: null,
-                status: 'pending',
-                createdAt: Date.now() - idx
-              });
-            }
-            processed++;
-            if (processed === files.length) {
-              if (loadedItems.length > 0) {
-                setItems(prev => [...loadedItems, ...prev]);
-                setActiveItemId(loadedItems[0].id);
-              }
-            }
-          };
-          reader.readAsDataURL(file);
-        });
+        void addImageFiles(files);
       }
     };
 
@@ -848,46 +694,13 @@ export default function App() {
 
   const handleUndoEdit = () => {
     if (!activeItem || activeItem.editHistory.length === 0) return;
-    setItems(prev => prev.map(i => {
-      if (i.id === activeItem.id) {
-        const newHistory = [...i.editHistory];
-        const previousImage = newHistory.pop()!;
-        const currentRedo = i.redoEditHistory ? [...i.redoEditHistory] : [];
-        currentRedo.push(i.originalImage);
-        return {
-          ...i,
-          originalImage: previousImage,
-          editHistory: newHistory,
-          redoEditHistory: currentRedo,
-          resultImage: null,
-          maskedImage: null,
-          status: 'pending'
-        };
-      }
-      return i;
-    }));
+    setItems(prev => prev.map(i => i.id === activeItem.id ? undoItem(i) : i));
     setClearTrigger(c => c + 1);
   };
 
   const handleRedoEdit = () => {
     if (!activeItem || !activeItem.redoEditHistory || activeItem.redoEditHistory.length === 0) return;
-    setItems(prev => prev.map(i => {
-      if (i.id === activeItem.id) {
-        const newRedoHistory = [...(i.redoEditHistory || [])];
-        const nextImage = newRedoHistory.pop()!;
-        const newHistory = [...i.editHistory, i.originalImage];
-        return {
-          ...i,
-          originalImage: nextImage,
-          editHistory: newHistory,
-          redoEditHistory: newRedoHistory,
-          resultImage: null,
-          maskedImage: null,
-          status: 'pending'
-        };
-      }
-      return i;
-    }));
+    setItems(prev => prev.map(i => i.id === activeItem.id ? redoItem(i) : i));
     setClearTrigger(c => c + 1);
   };
 
@@ -924,34 +737,7 @@ export default function App() {
       const files = Array.from(e.dataTransfer.files).filter(file => file.type.startsWith('image/'));
       if (files.length === 0) return;
 
-      const loadedItems: BatchItem[] = [];
-      let processed = 0;
-
-      files.forEach((file, idx) => {
-        const reader = new FileReader();
-        reader.onload = (event) => {
-          if (event.target?.result) {
-            loadedItems.push({
-              id: uuidv4(),
-              initialImage: event.target.result as string,
-              originalImage: event.target.result as string,
-              editHistory: [],
-              maskedImage: null,
-              resultImage: null,
-              status: 'pending',
-              createdAt: Date.now() - idx
-            });
-          }
-          processed++;
-          if (processed === files.length) {
-            if (loadedItems.length > 0) {
-              setItems(prev => [...loadedItems, ...prev]);
-              setActiveItemId(loadedItems[0].id);
-            }
-          }
-        };
-        reader.readAsDataURL(file);
-      });
+      void addImageFiles(files);
     }
   };
 
@@ -960,41 +746,21 @@ export default function App() {
       const files = Array.from(e.target.files).filter(file => file.type.startsWith('image/'));
       if (files.length === 0) return;
 
-      const loadedItems: BatchItem[] = [];
-      let processed = 0;
-
-      files.forEach((file, idx) => {
-        const reader = new FileReader();
-        reader.onload = (event) => {
-          if (event.target?.result) {
-            loadedItems.push({
-              id: uuidv4(),
-              initialImage: event.target.result as string,
-              originalImage: event.target.result as string,
-              editHistory: [],
-              maskedImage: null,
-              resultImage: null,
-              status: 'pending',
-              createdAt: Date.now() - idx
-            });
-          }
-          processed++;
-          if (processed === files.length) {
-            if (loadedItems.length > 0) {
-              setItems(prev => [...loadedItems, ...prev]);
-              setActiveItemId(loadedItems[0].id);
-            }
-          }
-        };
-        reader.readAsDataURL(file);
-      });
+      void addImageFiles(files);
+      e.target.value = '';
     }
   };
 
-  const handleMaskChange = (dataUrl: string, dalleMaskUrl?: string) => {
+  const handleMaskChange = (dataUrl: string, dalleMaskUrl?: string, maskOverlayUrl?: string) => {
     if (activeItemId) {
       setItems(prev => prev.map(item => 
-        item.id === activeItemId ? { ...item, maskedImage: dataUrl, dalleMaskImage: dalleMaskUrl, status: item.status === 'error' ? 'pending' : item.status } : item
+        item.id === activeItemId ? {
+          ...item,
+          maskedImage: dataUrl || null,
+          dalleMaskImage: dalleMaskUrl || null,
+          maskOverlayImage: maskOverlayUrl || null,
+          status: item.status === 'error' ? 'pending' : item.status,
+        } : item
       ));
     }
   };
@@ -1007,7 +773,11 @@ export default function App() {
           editHistory: [...item.editHistory, item.originalImage],
           originalImage: croppedImageUrl, 
           maskedImage: null, 
-          resultImage: null 
+          dalleMaskImage: null,
+          maskOverlayImage: null,
+          resultImage: null,
+          redoEditHistory: [],
+          status: 'pending',
         } : item
       ));
     }
@@ -1020,183 +790,39 @@ export default function App() {
     }
 
     const base64ImageToSend = (appMode === 'reimagine' && !item.maskedImage) ? item.originalImage : (item.maskedImage || item.originalImage);
-    
-    if (connectionMode === 'client') {
-      const apiKey = process.env.GEMINI_API_KEY;
-      if (!apiKey) {
-        throw new Error("مفتاح API الخاص بـ Gemini غير متوفر في التطبيق. يرجى تزويد مفتاح API في صفحة الإعدادات (Settings > Secrets) لتشغيله في المتصفح المباشر.");
-      }
-      
-      const ai = new GoogleGenAI({ 
-        apiKey,
-        httpOptions: {
-          headers: {
-            'User-Agent': 'aistudio-build'
-          }
-        }
-      });
-      
-      const base64Parts = base64ImageToSend.split(',');
-      const base64Data = base64Parts[1];
-      const mimeType = base64Parts[0].split(';')[0].split(':')[1] || 'image/png';
+    const originalImageToSend = isOpenAIModel(selectedModel) && item.dalleMaskImage
+      ? await toPngDataUrl(item.originalImage)
+      : item.originalImage;
 
-      const colorNames: Record<string, string> = {
-        '#00FF00': 'bright green',
-        '#FF00FF': 'magenta',
-        '#FF0000': 'red',
-        '#0000FF': 'blue',
-        '#FFFF00': 'yellow',
-      };
-      const colorName = colorNames[maskColor] || maskColor;
+    if (!ensureCredentials()) throw new Error('أدخل مفتاح Gemini API للمتابعة.');
+    const normalizedAspectRatio: AspectRatio = isSupportedAspectRatio(aspectRatio) ? aspectRatio : 'original';
+    const response = await requestInpaint({
+      maskedImage: base64ImageToSend,
+      originalImage: originalImageToSend,
+      dalleMaskImage: item.dalleMaskImage,
+      prompt: prompt.trim()
+        ? (generateDiverseVariants ? `${prompt.trim()} (variation ${index + 1})` : prompt.trim())
+        : '',
+      maskColor: item.maskedImage ? maskColor : undefined,
+      model: selectedModel,
+      appMode,
+      aspectRatio: normalizedAspectRatio,
+      imageSize,
+      enableOutpainting,
+      outpaintPreserve2D,
+      similarityLevel,
+    }, signal || abortControllerRef.current?.signal);
 
-      let variantPrompt = "";
-
-      if (appMode === 'reimagine') {
-        const aspectInstruction = aspectRatio === 'original' 
-          ? "Keep the original aspect ratio." 
-          : `Generate the final image strictly with an aspect ratio of ${aspectRatio}.`;
-
-        const basePrompt = prompt && prompt.trim() !== ''
-          ? prompt.trim()
-          : "Recreate this image in extremely high quality, adding fine details and beautiful professional lighting.";
-
-        if (item.maskedImage) {
-          variantPrompt = `Recreate and enhance this image. For the region painted with ${colorName} color, transform it according to: "${basePrompt}". For the rest of the image, recreate it in super high quality and keep it consistent. ${aspectInstruction}`;
-        } else {
-          variantPrompt = `Recreate and enhance this entire image in extremely high quality with fine details and professional resolution. Transform/recreate it based on: "${basePrompt}". Completely generate a clean, modern, high-resolution masterpiece. ${aspectInstruction}`;
-        }
-      } else {
-        if (enableOutpainting) {
-          const basePrompt = prompt && prompt.trim() !== '' ? prompt.trim() : "seamlessly extend the scene, keeping the original style, lighting, pattern, and details intact";
-          let outpaintInstruction = `The region painted with ${colorName} color is blank space or an extension area. Perform Generative Fill/Outpainting to seamlessly expand and complete the original image into this ${colorName} region. Maintain absolute continuity of the existing objects, textures, background patterns, and lighting. Do not alter the unpainted portion. Guide prompt: "${basePrompt}". Completely remove the ${colorName} color.`;
-          if (outpaintPreserve2D) {
-            outpaintInstruction += ` This is a 2D graphic design / banner / artwork, NOT a 3D real-world photo or scene. Absolutely DO NOT generate any 3D physical mockups, storefronts, walls, hanging boards, buildings, streets, or realistic physical environments. You must strictly keep it a flat 2D vector graphic design banner. Seamlessly extend only the background graphic patterns, gradients, curves, colors, and design elements into the painted area, preserving the flat, high-contrast, clean corporate style. No physical objects or realistic backgrounds should be added.`;
-          }
-          variantPrompt = outpaintInstruction;
-        } else {
-          variantPrompt = prompt && prompt.trim() !== ''
-            ? `Replace the ${colorName} painted area with: "${prompt.trim()}". Completely remove the ${colorName} paint and blend the new content naturally. Keep the rest of the image exactly the same.`
-            : `Remove the object covered by the ${colorName} paint and fill in the background naturally. Completely remove the ${colorName} paint. Keep the rest of the image exactly the same.`;
-        }
-      }
-
-      const isBatchMode = (appMode as string) === 'reimagine';
-      const useMulti = isBatchMode ? batchEnableMultiVariant : vanishEnableMultiVariant;
-      const totalVariants = isBatchMode ? batchVariantsCount : vanishVariantsCount;
-
-      if (useMulti && totalVariants > 1 && generateDiverseVariants) {
-        variantPrompt += ` (Variant variant Option ${index + 1}: ensure a highly realistic and diverse detail variation).`;
-      }
-
-      let clientTemp = 1.0;
-      if (similarityLevel === 'high') {
-        clientTemp = 0.15;
-      } else if (similarityLevel === 'medium') {
-        clientTemp = 0.5;
-      } else {
-        clientTemp = 1.0;
-      }
-
-      if (isAbortedRef.current || signal?.aborted) throw new Error("ABORTED");
-
-      const result = await ai.models.generateContent({
-        model: selectedModel,
-        contents: {
-          parts: [
-            {
-              inlineData: {
-                data: base64Data,
-                mimeType: mimeType,
-              },
-            },
-            {
-              text: variantPrompt,
-            },
-          ],
-        },
-        config: {
-          temperature: clientTemp,
-          ...(aspectRatio && aspectRatio !== 'original' ? {
-            imageConfig: {
-              aspectRatio: (() => {
-                const nativeRatios = ['1:1', '9:16', '16:9', '3:4', '4:3'];
-                if (nativeRatios.includes(aspectRatio)) {
-                  return aspectRatio;
-                }
-                const parts = aspectRatio.split(':');
-                if (parts.length === 2) {
-                  const w = Number(parts[0]);
-                  const h = Number(parts[1]);
-                  if (!isNaN(w) && !isNaN(h) && h !== 0) {
-                    const val = w / h;
-                    if (val >= 1.5) return '16:9';
-                    if (val >= 1.15) return '4:3';
-                    if (val >= 0.85) return '1:1';
-                    if (val >= 0.6) return '3:4';
-                    return '9:16';
-                  }
-                }
-                return '1:1';
-              })(),
-            }
-          } : {})
-        }
-      });
-
-      if (isAbortedRef.current || signal?.aborted) throw new Error("ABORTED");
-
-      let outputBase64 = null;
-      for (const part of result.candidates?.[0]?.content?.parts || []) {
-        if (part.inlineData) {
-          outputBase64 = `data:${part.inlineData.mimeType};base64,${part.inlineData.data}`;
-        }
-      }
-
-      if (outputBase64) {
-        return outputBase64;
-      } else {
-        throw new Error("لم يقم النموذج بتوليد صورة مصححة.");
-      }
-    } else {
-      const response = await fetch("/api/inpaint", {
-        method: "POST",
-        signal: signal || abortControllerRef.current?.signal,
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          maskedImage: base64ImageToSend,
-          originalImage: item.originalImage,
-          dalleMaskImage: item.dalleMaskImage,
-          prompt: prompt && prompt.trim() !== '' 
-            ? (generateDiverseVariants ? `${prompt} (variant variation ${index + 1})` : prompt)
-            : '',
-          maskColor: item.maskedImage ? maskColor : undefined,
-          model: selectedModel,
-          appMode,
-          aspectRatio,
-          enableOutpainting,
-          outpaintPreserve2D,
-          similarityLevel
-        }),
-      });
-
-      if (isAbortedRef.current || signal?.aborted) throw new Error("ABORTED");
-
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || "فشل توليد التعديل المطلوب.");
-      }
-
-      const data = await response.json();
-      const outputBase64 = data.resultImage;
-
-      if (outputBase64) {
-        return outputBase64;
-      } else {
-        throw new Error("لم يقم السيرفر بإرجاع الصورة المعالجة.");
-      }
+    if (
+      appMode === 'vanish' &&
+      !enableOutpainting &&
+      item.dalleMaskImage &&
+      !signal?.aborted &&
+      !isAbortedRef.current
+    ) {
+      return lockPixelsOutsideMask(item.originalImage, response.resultImage, item.dalleMaskImage);
     }
+    return response.resultImage;
   };
 
   const generateBatchMerge = async (images: string[], userPrompt: string, signal?: AbortSignal): Promise<string> => {
@@ -1204,147 +830,39 @@ export default function App() {
       throw new Error("ABORTED");
     }
 
-    if (connectionMode === 'client') {
-      const apiKey = process.env.GEMINI_API_KEY;
-      if (!apiKey) {
-        throw new Error("مفتاح API الخاص بـ Gemini غير متوفر في التطبيق. يرجى تزويد مفتاح API في صفحة الإعدادات (Settings > Secrets).");
+    if (images.length > 14) {
+      const chunks: string[][] = [];
+      for (let index = 0; index < images.length; index += 12) {
+        chunks.push(images.slice(index, index + 12));
       }
-      
-      const ai = new GoogleGenAI({ 
-        apiKey,
-        httpOptions: {
-          headers: {
-            'User-Agent': 'aistudio-build'
-          }
-        }
-      });
-
-      const parts: any[] = images.map(img => {
-        const base64Parts = img.split(',');
-        const base64Data = base64Parts[1];
-        const mimeType = base64Parts[0].split(';')[0].split(':')[1] || 'image/png';
-        return {
-          inlineData: {
-            data: base64Data,
-            mimeType: mimeType
-          }
-        };
-      });
-
-      const defaultMergePrompt = `PROFESSIONAL PHOTOROOM E-COMMERCE PRODUCT STAGING & BUNDLE MERGE:
-You are an expert commercial advertising photographer and 3D studio staging artist (like Photoroom Pro).
-You are provided with multiple input images containing distinct products, goods, or items.
-
-YOUR GOAL:
-Segment and extract the main product/item from EACH input image, and compose them together into ONE single, cohesive, high-end e-commerce product advertisement photograph.
-
-STRICT STAGING & COMPOSITION RULES:
-1. EXTRACT ALL DISTINCT PRODUCTS: Identify and include EVERY product/item from every provided image into the unified scene.
-2. COMMERCIAL STUDIO SETTING: Place all products neatly and harmoniously arranged together on an elegant, solid 3D commercial surface (such as a sleek modern studio podium, polished marble table, or warm wooden platform) against a clean, aesthetically shaded studio backdrop.
-3. REALISTIC CONTACT SHADOWS & LIGHTING: Cast soft realistic contact shadows underneath every product where it rests on the surface, with matching softbox studio reflections, consistent rim lighting, and uniform color temperature across all items.
-4. ABSOLUTELY NO ARTIFICIAL CLUTTER OR MERGING MUTATIONS: Do NOT melt or fuse products into one another. Keep each product as a distinct, perfectly preserved item with crisp labels, original colors, sharp text, and accurate shapes.
-5. BALANCED PRODUCT ARRANGEMENT: Group the items naturally like a premium product gift box, starter kit, or advertising showcase bundle (taller items towards the back/center, smaller items neatly in front).
-6. COMMERCIAL ADVERTISING QUALITY: High resolution, pristine depth-of-field, sharp product edges, and professional lighting.`;
-
-      const finalPromptText = userPrompt && userPrompt.trim() !== ''
-        ? `${defaultMergePrompt}\n\nUSER'S CUSTOM SCENE & ARRANGEMENT DIRECTION:\n"${userPrompt.trim()}". Make sure ALL products from all input images are accurately included and harmonized into this scene without flat pasting or collage artifacts.`
-        : defaultMergePrompt;
-
-      const aspectInstruction = aspectRatio && aspectRatio !== 'original'
-        ? ` Generate the final combined image strictly with an aspect ratio of ${aspectRatio}.`
-        : "";
-
-      parts.push({ text: finalPromptText + aspectInstruction });
-
-      let clientTemp = 0.5;
-      if (similarityLevel === 'high') {
-        clientTemp = 0.15;
-      } else if (similarityLevel === 'medium') {
-        clientTemp = 0.5;
-      } else {
-        clientTemp = 1.0;
+      const intermediate = await mapWithConcurrency(chunks, 1, (chunk) =>
+        generateBatchMerge(
+          chunk,
+          `${userPrompt}\nCreate a faithful intermediate group that preserves every supplied product for a later final merge.`,
+          signal,
+        ),
+      );
+      const successful = intermediate
+        .filter((result): result is PromiseFulfilledResult<string> => result.status === 'fulfilled')
+        .map((result) => result.value);
+      if (successful.length !== chunks.length) {
+        const failed = intermediate.find((result): result is PromiseRejectedResult => result.status === 'rejected');
+        throw failed?.reason || new Error('فشل الدمج المرحلي للباتش الكبير.');
       }
-
-      if (isAbortedRef.current || signal?.aborted) throw new Error("ABORTED");
-
-      const result = await ai.models.generateContent({
-        model: selectedModel,
-        contents: {
-          parts: parts
-        },
-        config: {
-          temperature: clientTemp,
-          ...(aspectRatio && aspectRatio !== 'original' ? {
-            imageConfig: {
-              aspectRatio: (() => {
-                const nativeRatios = ['1:1', '9:16', '16:9', '3:4', '4:3'];
-                if (nativeRatios.includes(aspectRatio)) return aspectRatio;
-                const ratioParts = aspectRatio.split(':');
-                if (ratioParts.length === 2) {
-                  const w = Number(ratioParts[0]);
-                  const h = Number(ratioParts[1]);
-                  if (!isNaN(w) && !isNaN(h) && h !== 0) {
-                    const val = w / h;
-                    if (val >= 1.5) return '16:9';
-                    if (val >= 1.15) return '4:3';
-                    if (val >= 0.85) return '1:1';
-                    if (val >= 0.6) return '3:4';
-                    return '9:16';
-                  }
-                }
-                return '1:1';
-              })()
-            }
-          } : {})
-        }
-      });
-
-      if (isAbortedRef.current || signal?.aborted) throw new Error("ABORTED");
-
-      let outputBase64 = null;
-      for (const part of result.candidates?.[0]?.content?.parts || []) {
-        if (part.inlineData) {
-          outputBase64 = `data:${part.inlineData.mimeType};base64,${part.inlineData.data}`;
-        }
-      }
-
-      if (outputBase64) {
-        return outputBase64;
-      } else {
-        throw new Error("لم يقم النموذج بتوليد صورة الدمج.");
-      }
-    } else {
-      const response = await fetch("/api/merge-batch", {
-        method: "POST",
-        signal: signal || abortControllerRef.current?.signal,
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          images,
-          prompt: userPrompt,
-          model: selectedModel,
-          aspectRatio,
-          similarityLevel
-        }),
-      });
-
-      if (isAbortedRef.current || signal?.aborted) throw new Error("ABORTED");
-
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || "فشلت عملية دمج الصور في السيرفر.");
-      }
-
-      const data = await response.json();
-      const outputBase64 = data.resultImage;
-
-      if (outputBase64) {
-        return outputBase64;
-      } else {
-        throw new Error("لم يقم السيرفر بإرجاع الصورة المدمجة.");
-      }
+      return generateBatchMerge(successful, userPrompt, signal);
     }
+
+    if (!ensureCredentials()) throw new Error('أدخل مفتاح Gemini API للمتابعة.');
+    const normalizedAspectRatio: AspectRatio = isSupportedAspectRatio(aspectRatio) ? aspectRatio : 'original';
+    const response = await requestBatchMerge({
+      images,
+      prompt: userPrompt,
+      model: selectedModel,
+      aspectRatio: normalizedAspectRatio,
+      imageSize,
+      similarityLevel,
+    }, signal || abortControllerRef.current?.signal);
+    return response.resultImage;
   };
 
   const processImage = async (item: BatchItem) => {
@@ -1358,20 +876,15 @@ STRICT STAGING & COMPOSITION RULES:
       const isBatch = (appMode as string) === 'reimagine';
       const useMulti = isBatch ? batchEnableMultiVariant : vanishEnableMultiVariant;
       const count = useMulti ? (isBatch ? batchVariantsCount : vanishVariantsCount) : 1;
-      const promises: Promise<string>[] = [];
       const currentSignal = abortControllerRef.current?.signal;
-      
-      if (item.inputImages && item.inputImages.length > 1) {
-        for (let i = 0; i < count; i++) {
-          promises.push(generateBatchMerge(item.inputImages, prompt, currentSignal));
-        }
-      } else {
-        for (let i = 0; i < count; i++) {
-          promises.push(generateSingleVariant(item, i, currentSignal));
-        }
-      }
-      
-      const results = await Promise.allSettled(promises);
+      const variantIndexes = Array.from({ length: count }, (_value, index) => index);
+      const results = await mapWithConcurrency(
+        variantIndexes,
+        isBatch ? 1 : Math.min(2, runtimeConfig?.maxBatchConcurrency || 2),
+        (variantIndex) => item.inputImages && item.inputImages.length > 1
+          ? generateBatchMerge(item.inputImages, prompt, currentSignal)
+          : generateSingleVariant(item, variantIndex, currentSignal),
+      );
       if (isAbortedRef.current || currentSignal?.aborted) {
         setItems(prev => prev.map(i => i.id === item.id ? { ...i, status: 'pending', errorMessage: undefined } : i));
         return;
@@ -1402,6 +915,9 @@ STRICT STAGING & COMPOSITION RULES:
         setItems(prev => prev.map(i => i.id === item.id ? { ...i, status: 'pending', errorMessage: undefined } : i));
         return;
       }
+      if (error?.name === 'API_KEY_REQUIRED' || error?.name === 'API_KEY_INVALID') {
+        handleForgetApiKey();
+      }
       console.error("Inpainting error:", error);
       let errMsg = error.message || "حدث خطأ أثناء معالجة الصورة";
       const errStr = typeof error === 'object' && error !== null ? JSON.stringify(error).toLowerCase() : String(error).toLowerCase();
@@ -1419,13 +935,22 @@ STRICT STAGING & COMPOSITION RULES:
   const handleDownload = (dataUrl: string, filename: string) => {
     const link = document.createElement('a');
     link.href = dataUrl;
-    link.download = filename;
+    link.download = filenameForDataUrl(filename, dataUrl);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
   };
 
   const processAll = async () => {
+    if (!runtimeConfig) {
+      setRuntimeConfigError('إعدادات الخادم لم تكتمل بعد. انتظر لحظة ثم أعد المحاولة.');
+      return;
+    }
+    if (!ensureCredentials()) return;
+    if (enableBatchMerge && isOpenAIModel(selectedModel)) {
+      window.alert('دمج صور الباتش متاح حاليًا مع موديلات Gemini فقط.');
+      return;
+    }
     isAbortedRef.current = false;
     abortControllerRef.current = new AbortController();
     setIsProcessing(true);
@@ -1454,8 +979,12 @@ STRICT STAGING & COMPOSITION RULES:
       try {
         const variantCount = batchEnableMultiVariant ? Math.max(1, batchVariantsCount) : 1;
         const currentSignal = abortControllerRef.current?.signal;
-        const mergePromises = Array.from({ length: variantCount }, () => generateBatchMerge(imagesToMerge, prompt, currentSignal));
-        const results = await Promise.allSettled(mergePromises);
+        const variantIndexes = Array.from({ length: variantCount }, (_value, index) => index);
+        const results = await mapWithConcurrency(
+          variantIndexes,
+          runtimeConfig?.maxBatchConcurrency || 2,
+          () => generateBatchMerge(imagesToMerge, prompt, currentSignal),
+        );
 
         if (isAbortedRef.current || currentSignal?.aborted) {
           setItems(prev => prev.filter(item => item.id !== mergedId));
@@ -1490,6 +1019,9 @@ STRICT STAGING & COMPOSITION RULES:
           setIsProcessing(false);
           return;
         }
+        if (error?.name === 'API_KEY_REQUIRED' || error?.name === 'API_KEY_INVALID') {
+          handleForgetApiKey();
+        }
         console.error("Batch Merge Error:", error);
         let errMsg = error.message || "حدث خطأ أثناء دمج الصور";
         const errStr = typeof error === 'object' && error !== null ? JSON.stringify(error).toLowerCase() : String(error).toLowerCase();
@@ -1518,8 +1050,11 @@ STRICT STAGING & COMPOSITION RULES:
     });
 
     if (appMode === 'reimagine') {
-      // Parallel execution: Process all batch items at the exact same time!
-      await Promise.all(pendingItems.map(item => processImage(item)));
+      await mapWithConcurrency(
+        pendingItems,
+        runtimeConfig?.maxBatchConcurrency || 2,
+        (item) => processImage(item),
+      );
     } else {
       // Sequential for Vanish mode (one by one)
       for (const item of pendingItems) {
@@ -1553,6 +1088,7 @@ STRICT STAGING & COMPOSITION RULES:
     setZipProgress(5);
 
     try {
+      const { default: JSZip } = await import('jszip');
       const zip = new JSZip();
       const folder = zip.folder("vanishai_results") || zip;
 
@@ -1561,13 +1097,12 @@ STRICT STAGING & COMPOSITION RULES:
         const imageUrl = item.resultImage || item.originalImage;
         
         let base64Data = '';
-        let ext = 'jpg';
+        let ext: 'png' | 'jpg' | 'webp' = 'jpg';
 
         if (imageUrl.startsWith('data:')) {
           const commaIdx = imageUrl.indexOf(',');
           base64Data = imageUrl.substring(commaIdx + 1);
-          if (imageUrl.includes('image/png')) ext = 'png';
-          else if (imageUrl.includes('image/webp')) ext = 'webp';
+          ext = dataUrlExtension(imageUrl);
           
           const fileName = `vanishai_image_${i + 1}_${item.id.slice(0, 6)}.${ext}`;
           folder.file(fileName, base64Data, { base64: true });
@@ -1626,6 +1161,7 @@ STRICT STAGING & COMPOSITION RULES:
         resultImage: null,
         maskedImage: null,
         dalleMaskImage: null,
+        maskOverlayImage: null,
         editHistory: [],
         redoEditHistory: [],
         variants: undefined,
@@ -1649,6 +1185,17 @@ STRICT STAGING & COMPOSITION RULES:
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
     >
+      <ApiKeyDialog
+        open={showApiKeyDialog}
+        required={Boolean(requiresUserApiKey && !hasUserApiKey)}
+        onClose={() => setShowApiKeyDialog(false)}
+        onSave={handleSaveApiKey}
+      />
+      {runtimeConfigError && (
+        <div className="fixed left-1/2 top-3 z-[90] -translate-x-1/2 rounded-xl border border-amber-500/30 bg-amber-950/95 px-4 py-2 text-xs text-amber-200 shadow-xl" dir="rtl">
+          {runtimeConfigError}
+        </div>
+      )}
       <AnimatePresence>
         {isDragging && (
           <motion.div 
@@ -1714,11 +1261,27 @@ STRICT STAGING & COMPOSITION RULES:
           <span className="text-neutral-400 text-[10px] md:text-xs px-1.5 md:px-2 flex items-center hidden sm:inline-block font-sans">الموديل النشط:</span>
           <select
             value={selectedModel}
-            onChange={(e) => setSelectedModel(e.target.value as any)}
+            onChange={(e) => setSelectedModel(e.target.value as ImageModel)}
             className="bg-neutral-950 border border-neutral-800 hover:border-neutral-700 text-white text-[10px] md:text-xs rounded-lg px-2 py-1 md:px-2.5 md:py-1.5 outline-none focus:border-purple-500 transition-all font-sans cursor-pointer min-w-[130px] sm:min-w-[170px]"
           >
             <option value="gemini-3.1-flash-lite-image">🍌 Nano Banana 2 Lite</option>
             <option value="gemini-3.1-flash-image">🍌 Nano Banana 2</option>
+            {runtimeConfig?.openaiAvailable && (
+              <optgroup label="OpenAI">
+                <option value="gpt-image-1.5">OpenAI GPT Image 1.5</option>
+                <option value="gpt-image-2">OpenAI GPT Image 2</option>
+              </optgroup>
+            )}
+          </select>
+          <select
+            value={imageSize}
+            onChange={(event) => setImageSize(event.target.value as ImageSize)}
+            className="rounded-lg border border-neutral-800 bg-neutral-950 px-2 py-1 text-[10px] text-white outline-none transition hover:border-neutral-700 focus:border-purple-500"
+            title="دقة الصورة الناتجة"
+          >
+            <option value="1K">1K</option>
+            <option value="2K" disabled={!supportsImageSize(selectedModel, '2K')}>2K</option>
+            <option value="4K" disabled={!supportsImageSize(selectedModel, '4K')}>4K</option>
           </select>
         </div>
 
@@ -1726,6 +1289,22 @@ STRICT STAGING & COMPOSITION RULES:
 
           {/* Actions list */}
           <div className="flex items-center gap-1 md:gap-3 overflow-x-auto no-scrollbar py-0.5 max-w-full justify-end flex-1 md:flex-initial">
+            {requiresUserApiKey && (
+              <button
+                type="button"
+                onClick={() => setShowApiKeyDialog(true)}
+                className={cn(
+                  'flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-[10px] font-bold transition',
+                  hasUserApiKey
+                    ? 'border-emerald-500/25 bg-emerald-500/10 text-emerald-300 hover:bg-emerald-500/15'
+                    : 'border-amber-500/30 bg-amber-500/10 text-amber-300 hover:bg-amber-500/15',
+                )}
+                title="إدارة مفتاح Gemini لهذه الجلسة"
+              >
+                <KeyRound className="h-3.5 w-3.5" />
+                <span>{hasUserApiKey ? 'المفتاح متصل' : 'أضف المفتاح'}</span>
+              </button>
+            )}
             {activeItem && (
               <button 
                 onClick={(e) => handleDeleteItem(activeItem.id, e)}
@@ -1751,12 +1330,12 @@ STRICT STAGING & COMPOSITION RULES:
               ref={fileInputRef} 
               onChange={handleFileUpload} 
               multiple 
-              accept="image/*" 
+              accept="image/png,image/jpeg,image/webp"
               className="hidden" 
             />
             <button 
               onClick={processAll}
-              disabled={isProcessing || items.length === 0}
+              disabled={isProcessing || items.length === 0 || !runtimeConfig}
               className="p-1.5 md:px-4 md:py-2 rounded-full bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-500 hover:to-blue-500 disabled:opacity-50 transition-all flex items-center justify-center gap-1.5 text-xs md:text-sm font-medium shadow-lg shadow-purple-500/20 cursor-pointer"
               title="Process All Masked Images"
             >
@@ -2195,34 +1774,22 @@ STRICT STAGING & COMPOSITION RULES:
                           )}
                         </div>
 
-                        {/* Connection Mode */}
+                        {/* Credential mode is detected by the server; secrets never enter the bundle. */}
                         <div className="space-y-2 pt-2 border-t border-white/5">
-                          <div className="text-xs text-neutral-400 font-medium font-sans">طريقة الاتصال</div>
-                          <div className="grid grid-cols-2 gap-1 bg-black/40 p-1 rounded-xl border border-white/5">
-                            <button
-                              type="button"
-                              onClick={() => setConnectionMode('client')}
-                              className={cn(
-                                "py-1 px-0.5 rounded-lg text-[9px] font-bold transition-all cursor-pointer text-center font-sans",
-                                connectionMode === 'client'
-                                  ? "bg-purple-600/20 border border-purple-500/40 text-purple-200"
-                                  : "text-neutral-400 hover:text-white border border-transparent"
+                          <div className="text-xs text-neutral-400 font-medium font-sans">اتصال آمن بالخادم</div>
+                          <div className="rounded-xl border border-white/5 bg-black/40 p-2.5 text-[10px] leading-relaxed text-neutral-400">
+                            <div className="flex items-center justify-between gap-2">
+                              <span className="flex items-center gap-1.5 font-bold text-neutral-200">
+                                <ShieldCheck className="h-3.5 w-3.5 text-emerald-400" />
+                                {requiresUserApiKey ? 'مفتاح حسابك' : 'مفتاح AI Studio الافتراضي'}
+                              </span>
+                              {requiresUserApiKey && (
+                                <button type="button" onClick={() => setShowApiKeyDialog(true)} className="text-purple-300 hover:text-purple-200">
+                                  {hasUserApiKey ? 'تغيير المفتاح' : 'إضافة المفتاح'}
+                                </button>
                               )}
-                            >
-                              المتصفح المباشر 💻
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => setConnectionMode('server')}
-                              className={cn(
-                                "py-1 px-0.5 rounded-lg text-[9px] font-bold transition-all cursor-pointer text-center font-sans",
-                                connectionMode === 'server'
-                                  ? "bg-blue-600/20 border border-blue-500/40 text-blue-200"
-                                  : "text-neutral-400 hover:text-white border border-transparent"
-                              )}
-                            >
-                              خادم التطبيق 🌐
-                            </button>
+                            </div>
+                            <p className="mt-1">كل عمليات Gemini تمر عبر الخادم ولا يتم تضمين أي مفتاح في كود المتصفح.</p>
                           </div>
                         </div>
                       </motion.div>
@@ -2274,6 +1841,7 @@ STRICT STAGING & COMPOSITION RULES:
                 brushHardness={brushHardness}
                 wandTolerance={wandTolerance}
                 maskColor={maskColor}
+                initialMaskUrl={activeItem?.maskOverlayImage}
                 onMaskChange={handleMaskChange}
                 clearTrigger={clearTrigger}
               />
@@ -2306,7 +1874,8 @@ STRICT STAGING & COMPOSITION RULES:
                     {(() => {
                       if (selectedModel === 'gemini-3.1-flash-image') return "الموديل النشط: 🍌 Nano Banana 2";
                       if (selectedModel === 'gemini-3.1-flash-lite-image') return "الموديل النشط: 🍌 Nano Banana 2 Lite";
-                      return "الموديل النشط: 🍌 Banana 2";
+                      if (selectedModel === 'gpt-image-2') return "الموديل النشط: OpenAI GPT Image 2";
+                      return "الموديل النشط: OpenAI GPT Image 1.5";
                     })()}
                   </h3>
                   
@@ -2368,24 +1937,20 @@ STRICT STAGING & COMPOSITION RULES:
                       activeItem.errorMessage.includes("تجاوز")
                     ) && (
                       <div className="mt-3 text-[11px] text-amber-200/95 leading-normal border-t border-red-500/20 pt-2 font-mono bg-amber-500/10 p-2.5 rounded-xl border border-amber-500/20">
-                        💡 <strong>نصيحة لحل المشكلة فوراً:</strong> 
+                        💡 <strong>حصة الموديل غير متاحة حاليًا:</strong>
                         <p className="mt-1 font-sans">
-                          خوادم الاستضافة السحابية المشتركة تخضع لحدود صارمة تؤدي لرفض معالجة الموديلات المجانية لـ Google بسبب الضغط. 
-                          <strong> تبديل طريقة الاتصال لـ "المتصفح المباشر 💻"</strong> سيتيح لك تجربة الصورة باستخدام حصتك الخاصة مباشرة عبر المتصفح لتجاوز هذا الضغط!
+                          {requiresUserApiKey
+                            ? 'استخدم مفتاحًا آخر له حصة متاحة أو فعّل Billing على مشروع المفتاح الحالي.'
+                            : 'انتظر تجدد الحصة أو اضبط مفتاح AI Studio الافتراضي على مشروع به Billing وحصة متاحة.'}
                         </p>
-                        {connectionMode === 'server' && (
+                        {requiresUserApiKey && (
                           <div className="mt-2.5 flex justify-start">
                             <button
                               type="button"
-                              onClick={() => {
-                                setConnectionMode('client');
-                                const updatedItem = { ...activeItem, status: 'pending' as const, errorMessage: undefined };
-                                setItems(prev => prev.map(i => i.id === activeItem.id ? updatedItem : i));
-                                setTimeout(() => processImage(updatedItem), 100);
-                              }}
+                              onClick={() => setShowApiKeyDialog(true)}
                               className="px-3 py-1.5 bg-amber-500 hover:bg-amber-400 text-black rounded-lg text-[10px] font-bold transition-all cursor-pointer shadow-md shadow-amber-500/10 flex items-center gap-1"
                             >
-                              <span>تفعيل المتصفح المباشر والإصلاح الآن 💻</span>
+                              <span>تغيير مفتاح Gemini 🔑</span>
                             </button>
                           </div>
                         )}
@@ -2467,6 +2032,8 @@ STRICT STAGING & COMPOSITION RULES:
                            originalImage: i.resultImage!,
                            resultImage: null,
                            maskedImage: null,
+                           dalleMaskImage: null,
+                           maskOverlayImage: null,
                            variants: undefined,
                            activeVariantIndex: undefined,
                            status: 'pending'
@@ -2899,36 +2466,22 @@ STRICT STAGING & COMPOSITION RULES:
                 />
               </div>
 
-              {/* Connection Mode Card */}
+              {/* Server-selected credential mode */}
               <div className="space-y-2 bg-black/20 p-3 rounded-xl border border-white/5">
-                <div className="text-[11px] text-neutral-400 font-bold font-sans">🌐 طريقة المعالجة والاتصال:</div>
-                <div className="grid grid-cols-2 gap-1.5 bg-black/40 p-1 rounded-xl">
-                  <button
-                    type="button"
-                    disabled={isProcessing}
-                    onClick={() => setConnectionMode('client')}
-                    className={cn(
-                      "py-1.5 rounded-lg text-[9px] font-bold transition-all cursor-pointer text-center font-sans",
-                      connectionMode === 'client'
-                        ? "bg-purple-600/25 border border-purple-500/35 text-purple-200"
-                        : "text-neutral-400 hover:text-white border border-transparent"
+                <div className="text-[11px] text-neutral-400 font-bold font-sans">🔐 اتصال Gemini الآمن:</div>
+                <div className="rounded-xl border border-white/5 bg-black/40 p-2.5">
+                  <div className="flex items-center justify-between gap-2 text-[10px]">
+                    <span className="flex items-center gap-1.5 font-bold text-emerald-300">
+                      <ShieldCheck className="h-3.5 w-3.5" />
+                      {requiresUserApiKey ? 'BYOK — مفتاح المستخدم' : 'Google AI Studio — تلقائي'}
+                    </span>
+                    {requiresUserApiKey && (
+                      <button type="button" disabled={isProcessing} onClick={() => setShowApiKeyDialog(true)} className="font-bold text-purple-300 hover:text-purple-200 disabled:opacity-50">
+                        {hasUserApiKey ? 'تغيير' : 'إضافة'}
+                      </button>
                     )}
-                  >
-                    متصفح مباشر 💻
-                  </button>
-                  <button
-                    type="button"
-                    disabled={isProcessing}
-                    onClick={() => setConnectionMode('server')}
-                    className={cn(
-                      "py-1.5 rounded-lg text-[9px] font-bold transition-all cursor-pointer text-center font-sans",
-                      connectionMode === 'server'
-                        ? "bg-blue-600/25 border border-blue-500/35 text-blue-200"
-                        : "text-neutral-400 hover:text-white border border-transparent"
-                    )}
-                  >
-                    خادم التطبيق 🌐
-                  </button>
+                  </div>
+                  <p className="mt-1 text-[9px] leading-relaxed text-neutral-500">المفتاح لا يُضمّن داخل ملفات الواجهة ولا يُحفظ على الخادم.</p>
                 </div>
               </div>
 
@@ -3212,78 +2765,19 @@ STRICT STAGING & COMPOSITION RULES:
                         setItems(prev => prev.map(i => i.id === item.id ? { ...i, status: 'pending', errorMessage: undefined, resultImage: null, variants: undefined } : i));
                       }}
                       onEditInVanish={() => {
-                        // Accept result as original and switch to vanish mode
-                        setItems(prev => prev.map(i => i.id === item.id ? {
-                          ...i,
-                          originalImage: i.resultImage || i.originalImage,
-                          resultImage: null,
-                          status: 'pending'
-                        } : i));
+                        setItems(prev => prev.map(i => i.id === item.id ? acceptItemResult(i) : i));
+                        setClearTrigger(c => c + 1);
                         setActiveItemId(item.id);
                         setAppMode('vanish');
                         setTool('brush');
                         setShowSidebar(true);
                       }}
                       onAccept={() => {
-                        // Accept result as original and keep current state/history
-                        setItems(prev => prev.map(i => i.id === item.id ? {
-                          ...i,
-                          editHistory: [...(i.editHistory || []), i.originalImage],
-                          redoEditHistory: [],
-                          originalImage: i.resultImage || i.originalImage,
-                          resultImage: null,
-                          maskedImage: null,
-                          variants: undefined,
-                          activeVariantIndex: undefined,
-                          status: 'pending'
-                        } : i));
+                        setItems(prev => prev.map(i => i.id === item.id ? acceptItemResult(i) : i));
                         setClearTrigger(c => c + 1);
                       }}
                       onUndo={() => {
-                        setItems(prev => prev.map(i => {
-                          if (i.id === item.id) {
-                            if (i.resultImage) {
-                              return {
-                                ...i,
-                                resultImage: null,
-                                maskedImage: null,
-                                variants: undefined,
-                                activeVariantIndex: undefined,
-                                status: 'pending',
-                                errorMessage: undefined
-                              };
-                            } else if (i.editHistory && i.editHistory.length > 0) {
-                              const newHistory = [...i.editHistory];
-                              const previousImage = newHistory.pop()!;
-                              const currentRedo = i.redoEditHistory ? [...i.redoEditHistory] : [];
-                              currentRedo.push(i.originalImage);
-                              return {
-                                ...i,
-                                originalImage: previousImage,
-                                editHistory: newHistory,
-                                redoEditHistory: currentRedo,
-                                resultImage: null,
-                                maskedImage: null,
-                                variants: undefined,
-                                activeVariantIndex: undefined,
-                                status: 'pending',
-                                errorMessage: undefined
-                              };
-                            } else if (i.initialImage && i.initialImage !== i.originalImage) {
-                              return {
-                                ...i,
-                                originalImage: i.initialImage,
-                                resultImage: null,
-                                maskedImage: null,
-                                variants: undefined,
-                                activeVariantIndex: undefined,
-                                status: 'pending',
-                                errorMessage: undefined
-                              };
-                            }
-                          }
-                          return i;
-                        }));
+                        setItems(prev => prev.map(i => i.id === item.id ? undoItem(i) : i));
                         setClearTrigger(c => c + 1);
                       }}
                       onDownload={() => handleDownload(item.resultImage || item.originalImage, `vanishai-batch-${item.id}.jpg`)}
@@ -3348,53 +2842,14 @@ STRICT STAGING & COMPOSITION RULES:
         }}
         onAccept={() => {
           if (lightboxItem) {
-            setItems(prev => prev.map(i => i.id === lightboxItem.id ? {
-              ...i,
-              editHistory: [...(i.editHistory || []), i.originalImage],
-              redoEditHistory: [],
-              originalImage: i.resultImage || i.originalImage,
-              resultImage: null,
-              maskedImage: null,
-              variants: undefined,
-              activeVariantIndex: undefined,
-              status: 'pending'
-            } : i));
+            setItems(prev => prev.map(i => i.id === lightboxItem.id ? acceptItemResult(i) : i));
             setClearTrigger(c => c + 1);
             setLightboxItemId(null);
           }
         }}
         onUndo={() => {
           if (lightboxItem) {
-            setItems(prev => prev.map(i => {
-              if (i.id === lightboxItem.id) {
-                if (i.editHistory && i.editHistory.length > 0) {
-                  const newHistory = [...i.editHistory];
-                  const previousImage = newHistory.pop()!;
-                  const currentRedo = i.redoEditHistory ? [...i.redoEditHistory] : [];
-                  currentRedo.push(i.originalImage);
-                  return {
-                    ...i,
-                    originalImage: previousImage,
-                    editHistory: newHistory,
-                    redoEditHistory: currentRedo,
-                    resultImage: null,
-                    maskedImage: null,
-                    variants: undefined,
-                    activeVariantIndex: undefined,
-                    status: 'pending'
-                  };
-                } else if (i.resultImage) {
-                  return {
-                    ...i,
-                    resultImage: null,
-                    variants: undefined,
-                    activeVariantIndex: undefined,
-                    status: 'pending'
-                  };
-                }
-              }
-              return i;
-            }));
+            setItems(prev => prev.map(i => i.id === lightboxItem.id ? undoItem(i) : i));
             setClearTrigger(c => c + 1);
           }
         }}
@@ -3765,4 +3220,3 @@ function ToolButton({ icon: Icon, active, onClick, onContextMenu, onPointerDown,
     </button>
   );
 }
-

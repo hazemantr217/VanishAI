@@ -20,11 +20,15 @@ export default function CropModal({ imageUrl, onComplete, onCancel }: CropModalP
       const canvas = document.createElement('canvas');
       const scaleX = imgRef.current.naturalWidth / imgRef.current.width;
       const scaleY = imgRef.current.naturalHeight / imgRef.current.height;
-      canvas.width = completedCrop.width;
-      canvas.height = completedCrop.height;
+      const outputWidth = Math.max(1, Math.round(completedCrop.width * scaleX));
+      const outputHeight = Math.max(1, Math.round(completedCrop.height * scaleY));
+      canvas.width = outputWidth;
+      canvas.height = outputHeight;
       const ctx = canvas.getContext('2d');
 
       if (ctx) {
+        ctx.imageSmoothingEnabled = true;
+        ctx.imageSmoothingQuality = 'high';
         ctx.drawImage(
           imgRef.current,
           completedCrop.x * scaleX,
@@ -33,8 +37,8 @@ export default function CropModal({ imageUrl, onComplete, onCancel }: CropModalP
           completedCrop.height * scaleY,
           0,
           0,
-          completedCrop.width,
-          completedCrop.height
+          outputWidth,
+          outputHeight
         );
         const base64Image = canvas.toDataURL('image/png');
         onComplete(base64Image);

@@ -1,6 +1,6 @@
 {
   "name": "VanishAI - Image Inpainting",
-  "description": "A modern SaaS application for removing watermarks and unwanted objects from images using Google Gemini API.",
+  "description": "High-fidelity image inpainting, object removal, outpainting, and batch editing with server-side AI providers.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

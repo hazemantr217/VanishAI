@@ -2,21 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X, Download, Eye, Image as ImageIcon, ChevronLeft, ChevronRight, Split, ZoomIn, ZoomOut, Maximize2, RotateCcw, Move, Undo, Check } from 'lucide-react';
 import { cn } from '../lib/utils';
-
-interface BatchItem {
-  id: string;
-  initialImage: string;
-  originalImage: string;
-  editHistory: string[];
-  redoEditHistory?: string[];
-  maskedImage: string | null;
-  resultImage: string | null;
-  variants?: string[];
-  activeVariantIndex?: number;
-  inputImages?: string[];
-  status: 'pending' | 'processing' | 'completed' | 'error';
-  errorMessage?: string;
-}
+import type { BatchItem } from '../types';
 
 interface ImageLightboxProps {
   isOpen: boolean;
@@ -707,4 +693,3 @@ export default function ImageLightbox({
     </AnimatePresence>
   );
 }
-
