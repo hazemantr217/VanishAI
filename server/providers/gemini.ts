@@ -7,6 +7,10 @@ import { extractInteractionImage, parseImageDataUrl } from '../image-data';
 type InpaintInput = z.infer<typeof inpaintRequestSchema>;
 type MergeInput = z.infer<typeof mergeBatchRequestSchema>;
 
+type InteractionInputBlock =
+  | { type: 'image'; data: string; mime_type: 'image/png' | 'image/jpeg' | 'image/webp' }
+  | { type: 'text'; text: string };
+
 function createClient(apiKey: string): GoogleGenAI {
   return new GoogleGenAI({
     apiKey,
@@ -18,12 +22,24 @@ function createClient(apiKey: string): GoogleGenAI {
   });
 }
 
-function responseFormat(input: { aspectRatio: string; imageSize: string }) {
+export function imageResponseFormat(input: { aspectRatio: string; imageSize: string }) {
   return {
-    type: 'image',
+    type: 'image' as const,
     mime_type: 'image/png',
     ...(input.aspectRatio === 'original' ? {} : { aspect_ratio: input.aspectRatio }),
     image_size: input.imageSize,
+  };
+}
+
+export function imageInteractionRequest(
+  model: string,
+  input: InteractionInputBlock[],
+  output: { aspectRatio: string; imageSize: string },
+) {
+  return {
+    model,
+    input,
+    response_format: imageResponseFormat(output),
   };
 }
 
@@ -53,14 +69,10 @@ export async function editWithGemini(
     { type: 'text' as const, text: buildImageEditPrompt(input) },
   ];
 
-  const interaction = await ai.interactions.create({
-    model: input.model,
-    input: interactionInput,
-    response_format: responseFormat(input),
-    response_modalities: ['image'],
-    store: false,
-    stream: false,
-  }, { signal });
+  const interaction = await ai.interactions.create(
+    imageInteractionRequest(input.model, interactionInput, input),
+    { signal },
+  );
 
   return extractInteractionImage(interaction);
 }
@@ -71,10 +83,7 @@ export async function mergeWithGemini(
   signal: AbortSignal,
 ): Promise<string> {
   const ai = createClient(apiKey);
-  const interactionInput: Array<
-    { type: 'image'; data: string; mime_type: 'image/png' | 'image/jpeg' | 'image/webp' } |
-    { type: 'text'; text: string }
-  > = input.images.map((image) => {
+  const interactionInput: InteractionInputBlock[] = input.images.map((image) => {
     const parsed = parseImageDataUrl(image);
     return {
       type: 'image',
@@ -85,14 +94,10 @@ export async function mergeWithGemini(
 
   interactionInput.push({ type: 'text', text: buildMergePrompt(input) });
 
-  const interaction = await ai.interactions.create({
-    model: input.model,
-    input: interactionInput,
-    response_format: responseFormat(input),
-    response_modalities: ['image'],
-    store: false,
-    stream: false,
-  }, { signal });
+  const interaction = await ai.interactions.create(
+    imageInteractionRequest(input.model, interactionInput, input),
+    { signal },
+  );
 
   return extractInteractionImage(interaction);
 }
