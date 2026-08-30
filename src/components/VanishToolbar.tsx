@@ -158,7 +158,7 @@ function ToolButton({
       className={cn(
         'group relative flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border transition disabled:cursor-not-allowed disabled:opacity-25',
         active
-          ? 'border-purple-400/50 bg-purple-600 text-white shadow-md shadow-purple-500/20'
+          ? 'border-orange-400/50 bg-orange-500 text-white shadow-md shadow-orange-500/20'
           : tone === 'danger'
             ? 'border-red-500/15 bg-red-500/[0.06] text-red-300 hover:border-red-500/35 hover:bg-red-500/15'
             : 'border-transparent bg-white/[0.035] text-neutral-400 hover:border-white/10 hover:bg-white/[0.08] hover:text-white',

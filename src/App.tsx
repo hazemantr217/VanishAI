@@ -832,10 +832,10 @@ export default function App() {
             >
               <div className="flex items-center justify-between mb-4 pb-2 border-b border-white/5">
                 <div className="flex items-center gap-2 text-sm font-semibold text-neutral-200">
-                  <Settings2 className="w-4 h-4 text-purple-400" />
+                  <Settings2 className="w-4 h-4 text-orange-400" />
                   <span>لوحة الخيارات الذكية</span>
                 </div>
-                <span className="text-[10px] bg-purple-500/15 text-purple-300 px-2 py-0.5 rounded-full border border-purple-500/20 font-bold">VanishAI Pro</span>
+                <span className="text-[10px] bg-orange-500/15 text-orange-300 px-2 py-0.5 rounded-full border border-orange-500/20 font-bold">VanishAI Pro</span>
               </div>
 
               <div className="space-y-4">
@@ -851,7 +851,7 @@ export default function App() {
                       <div className="space-y-1">
                         <div className="flex justify-between text-xs text-neutral-400">
                           <span>حجم الفرشاة</span>
-                          <span className="font-mono text-purple-400 font-semibold">{brushSize}px</span>
+                          <span className="font-mono text-orange-400 font-semibold">{brushSize}px</span>
                         </div>
                         <input 
                           type="range" 
@@ -859,14 +859,14 @@ export default function App() {
                           max="200" 
                           value={brushSize} 
                           onChange={(e) => setBrushSize(Number(e.target.value))}
-                          className="w-full accent-purple-500 cursor-pointer"
+                          className="w-full accent-orange-500 cursor-pointer"
                         />
                       </div>
                       
                       <div className="space-y-1">
                         <div className="flex justify-between text-xs text-neutral-400">
                           <span>صلابة الحواف</span>
-                          <span className="font-mono text-purple-400 font-semibold">{brushHardness}%</span>
+                          <span className="font-mono text-orange-400 font-semibold">{brushHardness}%</span>
                         </div>
                         <input 
                           type="range" 
@@ -874,7 +874,7 @@ export default function App() {
                           max="100" 
                           value={brushHardness} 
                           onChange={(e) => setBrushHardness(Number(e.target.value))}
-                          className="w-full accent-purple-500 cursor-pointer"
+                          className="w-full accent-orange-500 cursor-pointer"
                         />
                       </div>
                     </div>
@@ -884,7 +884,7 @@ export default function App() {
                     <div className="space-y-1">
                       <div className="flex justify-between text-xs text-neutral-400">
                         <span className="font-sans font-medium">دقة التحديد (Tolerance)</span>
-                        <span className="font-mono text-purple-400 font-bold">{wandTolerance}</span>
+                        <span className="font-mono text-orange-400 font-bold">{wandTolerance}</span>
                       </div>
                       <input 
                         type="range" 
@@ -892,7 +892,7 @@ export default function App() {
                         max="100" 
                         value={wandTolerance} 
                         onChange={(e) => setWandTolerance(Number(e.target.value))}
-                        className="w-full accent-purple-500 cursor-pointer"
+                        className="w-full accent-orange-500 cursor-pointer"
                       />
                     </div>
                   )}
@@ -908,7 +908,7 @@ export default function App() {
                           onClick={() => setMaskColor(color)}
                           className={cn(
                             "w-5 h-5 rounded-full border transition-all",
-                            maskColor === color ? "border-white scale-110 ring-2 ring-purple-500/30" : "border-transparent hover:scale-110"
+                            maskColor === color ? "border-white scale-110 ring-2 ring-orange-500/30" : "border-transparent hover:scale-110"
                           )}
                           style={{ backgroundColor: color }}
                         />
@@ -932,19 +932,19 @@ export default function App() {
                         disabled={isProcessing}
                         className="sr-only peer" 
                       />
-                      <div className="w-8 h-4 bg-neutral-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-neutral-300 after:border after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-purple-600 relative"></div>
+                      <div className="w-8 h-4 bg-neutral-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-neutral-300 after:border after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-orange-500 relative"></div>
                     </label>
                   </div>
                   {enableOutpainting && (
-                    <div className="mt-2 p-2.5 bg-neutral-900/60 border border-purple-500/20 rounded-lg space-y-3">
-                      <p className="text-[9px] text-purple-400 leading-normal text-right font-sans">
+                    <div className="mt-2 p-2.5 bg-neutral-900/60 border border-orange-500/20 rounded-lg space-y-3">
+                      <p className="text-[9px] text-orange-400 leading-normal text-right font-sans">
                         💡 ممتاز! قم بتحديد/تلوين المناطق الفارغة أو الهوامش المراد تكميلها (مثال: باللون الأحمر أو الأخضر) وسيقوم الموديل بتوسيع الصورة بذكاء لملئها seamlessly.
                       </p>
 
                       {/* 2D Design Mode Toggle */}
                       <div className="flex justify-between items-center text-xs text-neutral-300 pt-1.5 border-t border-white/5">
                         <div className="flex flex-col pr-1 text-right">
-                          <span className="font-semibold font-sans text-[11px] text-purple-200">📐 الحفاظ على التصميم ثنائي الأبعاد (2D)</span>
+                          <span className="font-semibold font-sans text-[11px] text-orange-200">📐 الحفاظ على التصميم ثنائي الأبعاد (2D)</span>
                           <span className="text-[9px] text-neutral-500 font-normal mt-0.5">منع تحويل البانر/التصميم إلى واجهات أو مجسمات 3D حقيقية</span>
                         </div>
                         <label className="relative inline-flex items-center cursor-pointer select-none">
@@ -955,7 +955,7 @@ export default function App() {
                             disabled={isProcessing}
                             className="sr-only peer" 
                           />
-                          <div className="w-8 h-4 bg-neutral-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-neutral-300 after:border after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-purple-600 relative"></div>
+                          <div className="w-8 h-4 bg-neutral-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-neutral-300 after:border after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-orange-500 relative"></div>
                         </label>
                       </div>
 
@@ -963,7 +963,7 @@ export default function App() {
                       <div className="space-y-1.5 pt-1.5 border-t border-white/5">
                         <div className="flex justify-between text-[11px] text-neutral-300 font-sans">
                           <span className="text-[9px] text-neutral-500">معدل الاختلاف بين الخيارات الأربعة</span>
-                          <span className="font-semibold text-purple-200">🎯 مستوى التشابه بين النتائج</span>
+                          <span className="font-semibold text-orange-200">🎯 مستوى التشابه بين النتائج</span>
                         </div>
                         <div className="grid grid-cols-3 gap-1 pt-0.5">
                           {[
@@ -982,7 +982,7 @@ export default function App() {
                               }}
                               className={`p-1.5 rounded text-center transition-all cursor-pointer flex flex-col items-center justify-center border ${
                                 similarityLevel === opt.value
-                                  ? 'bg-purple-600/30 border-purple-500 text-white font-semibold'
+                                  ? 'bg-orange-500/30 border-orange-500 text-white font-semibold'
                                   : 'bg-neutral-800/40 border-neutral-700/60 text-neutral-400 hover:bg-neutral-800'
                               }`}
                             >
@@ -996,7 +996,7 @@ export default function App() {
                       {/* Generate Diverse Variants Toggle */}
                       <div className="flex justify-between items-center text-xs text-neutral-300 pt-1.5 border-t border-white/5">
                         <div className="flex flex-col pr-1 text-right">
-                          <span className="font-semibold font-sans text-[11px] text-purple-200">🔀 توليد أفكار مختلفة كلياً لكل بديل</span>
+                          <span className="font-semibold font-sans text-[11px] text-orange-200">🔀 توليد أفكار مختلفة كلياً لكل بديل</span>
                           <span className="text-[9px] text-neutral-500 font-normal mt-0.5">توجيه كل خيار من الـ 4 لاتجاه فني مختلف</span>
                         </div>
                         <label className="relative inline-flex items-center cursor-pointer select-none">
@@ -1012,7 +1012,7 @@ export default function App() {
                             disabled={isProcessing}
                             className="sr-only peer" 
                           />
-                          <div className="w-8 h-4 bg-neutral-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-neutral-300 after:border after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-purple-600 relative"></div>
+                          <div className="w-8 h-4 bg-neutral-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-neutral-300 after:border after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-orange-500 relative"></div>
                         </label>
                       </div>
                     </div>
@@ -1028,7 +1028,7 @@ export default function App() {
                     <span className="flex items-center gap-1.5 font-sans">
                       <span>✍️ إرشادات وطلب التوليد (برومبت اختياري)</span>
                     </span>
-                    <span className="text-purple-400 font-mono text-[10px]">{showVanishAdvanced ? 'إخفاء ▴' : 'توسيع البرومبت ▾'}</span>
+                    <span className="text-orange-400 font-mono text-[10px]">{showVanishAdvanced ? 'إخفاء ▴' : 'توسيع البرومبت ▾'}</span>
                   </button>
 
                   <AnimatePresence>
@@ -1043,7 +1043,7 @@ export default function App() {
                           value={prompt}
                           onChange={(e) => setPrompt(e.target.value)}
                           placeholder="مثال: طاولة خشبية عتيقة... (اتركه فارغاً للمسح والملء التلقائي)"
-                          className="w-full bg-black/50 border border-white/10 rounded-xl p-2.5 text-xs text-white placeholder:text-neutral-500 resize-none h-20 focus:outline-none focus:border-purple-500 transition-colors leading-relaxed font-sans"
+                          className="w-full bg-black/50 border border-white/10 rounded-xl p-2.5 text-xs text-white placeholder:text-neutral-500 resize-none h-20 focus:outline-none focus:border-orange-500 transition-colors leading-relaxed font-sans"
                         />
                         <p className="text-[9px] text-neutral-500 leading-normal text-right font-sans">
                           💡 نصيحة: يمكنك ترك البرومبت فارغاً تماماً وسيقوم الذكاء الاصطناعي بمسح العناصر المحددة تلقائياً بما يطابق تفاصيل الخلفية بذكاء!
@@ -1063,7 +1063,7 @@ export default function App() {
                     <span className="flex items-center gap-1.5 font-sans">
                       <span>⚙️ خيارات الاتصال والتوليد المتعدد</span>
                     </span>
-                    <span className="text-purple-400 font-mono text-[10px]">{showVanishSystemSettings ? 'إخفاء ▴' : 'توسيع ▾'}</span>
+                    <span className="text-orange-400 font-mono text-[10px]">{showVanishSystemSettings ? 'إخفاء ▴' : 'توسيع ▾'}</span>
                   </button>
 
                   <AnimatePresence>
@@ -1085,7 +1085,7 @@ export default function App() {
                                 onChange={(e) => setVanishEnableMultiVariant(e.target.checked)}
                                 className="sr-only peer" 
                               />
-                              <div className="w-8 h-4 bg-neutral-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-neutral-300 after:border after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-purple-600"></div>
+                              <div className="w-8 h-4 bg-neutral-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-neutral-300 after:border after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-orange-500"></div>
                             </label>
                           </div>
                           {vanishEnableMultiVariant && (
@@ -1100,7 +1100,7 @@ export default function App() {
                                     className={cn(
                                       "px-1.5 py-0.5 rounded text-[10px] font-bold transition-all cursor-pointer",
                                       vanishVariantsCount === count 
-                                        ? "bg-purple-600 text-white shadow-md shadow-purple-500/15" 
+                                        ? "bg-orange-500 text-white shadow-md shadow-orange-500/15" 
                                         : "text-neutral-400 hover:text-white"
                                     )}
                                   >
@@ -1127,9 +1127,9 @@ export default function App() {
             {items.length === 0 ? (
               <div 
                 onClick={() => fileInputRef.current?.click()}
-                className="max-w-md w-full border-2 border-dashed border-neutral-800 hover:border-purple-500/40 bg-neutral-900/10 hover:bg-purple-950/5 rounded-3xl flex flex-col items-center justify-center p-8 text-center transition-all cursor-pointer select-none group"
+                className="max-w-md w-full border-2 border-dashed border-neutral-800 hover:border-orange-500/40 bg-neutral-900/10 hover:bg-orange-950/5 rounded-3xl flex flex-col items-center justify-center p-8 text-center transition-all cursor-pointer select-none group"
               >
-                <div className="w-16 h-16 rounded-2xl bg-neutral-900 border border-white/5 flex items-center justify-center text-neutral-400 group-hover:text-purple-400 group-hover:border-purple-500/20 transition-all mb-4 shadow-xl">
+                <div className="w-16 h-16 rounded-2xl bg-neutral-900 border border-white/5 flex items-center justify-center text-neutral-400 group-hover:text-orange-400 group-hover:border-orange-500/20 transition-all mb-4 shadow-xl">
                   <Upload className="w-8 h-8 group-hover:scale-110 transition-transform animate-bounce" />
                 </div>
                 <h4 className="text-base font-bold text-neutral-200 group-hover:text-white transition-colors mb-2 font-sans">قم برفع صورة للبدء في مسح العناصر</h4>
@@ -1137,7 +1137,7 @@ export default function App() {
                   قم بسحب وإفلات صورتك هنا أو انقر لاختيارها من جهازك، أو يمكنك إضافة صورة سابقة من معرض الأرشيف في قاعدة البيانات!
                 </p>
                 <div className="flex flex-col sm:flex-row gap-2 w-full justify-center">
-                  <span className="px-4 py-2 bg-purple-600 hover:bg-purple-500 text-white text-xs font-bold rounded-xl shadow-lg shadow-purple-500/10 transition-colors font-sans">
+                  <span className="px-4 py-2 bg-orange-500 hover:bg-orange-600 text-white text-xs font-bold rounded-xl shadow-lg shadow-orange-500/10 transition-colors font-sans">
                     اختيار صورة من الجهاز 💻
                   </span>
                   <button
@@ -1178,18 +1178,18 @@ export default function App() {
                 >
                   <div className="relative mb-6">
                     {/* Outer glowing pulsing ring */}
-                    <div className="absolute -inset-4 bg-gradient-to-r from-purple-500 to-blue-500 rounded-full blur-xl opacity-35 animate-pulse"></div>
+                    <div className="absolute -inset-4 bg-gradient-to-r from-orange-500 to-amber-500 rounded-full blur-xl opacity-35 animate-pulse"></div>
                     
                     {/* Rotating modern circular progress */}
-                    <div className="w-20 h-20 rounded-full border-4 border-neutral-800 border-t-purple-500 border-r-blue-500 animate-spin flex items-center justify-center">
+                    <div className="w-20 h-20 rounded-full border-4 border-neutral-800 border-t-orange-500 border-r-amber-500 animate-spin flex items-center justify-center">
                       <Loader2 className="w-8 h-8 text-white" />
                     </div>
                   </div>
                   
                   <h3 className="text-base font-bold text-white mb-2 flex items-center gap-1.5 shrink-0 bg-white/5 border border-white/10 px-3 py-1 rounded-full text-xs">
                     <span className="relative flex h-2 w-2">
-                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75"></span>
-                      <span className="relative inline-flex rounded-full h-2 w-2 bg-blue-500"></span>
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-orange-400 opacity-75"></span>
+                      <span className="relative inline-flex rounded-full h-2 w-2 bg-orange-500"></span>
                     </span>
                     {(() => {
                       if (selectedModel === 'gemini-3.1-flash-image') return "الموديل النشط: 🍌 Nano Banana 2";
@@ -1221,7 +1221,7 @@ export default function App() {
                       <span>إيقاف المعالجة فوراً 🛑</span>
                     </button>
                     <div className="flex gap-2 items-center text-[11px] text-neutral-500">
-                      <div className="w-1.5 h-1.5 bg-purple-500 rounded-full animate-ping"></div>
+                      <div className="w-1.5 h-1.5 bg-orange-500 rounded-full animate-ping"></div>
                       <span>يرجى البقاء في الصفحة حتى اكتمال المعالجة الذكية...</span>
                     </div>
                   </div>
@@ -1259,21 +1259,8 @@ export default function App() {
                       <div className="mt-3 text-[11px] text-amber-200/95 leading-normal border-t border-red-500/20 pt-2 font-mono bg-amber-500/10 p-2.5 rounded-xl border border-amber-500/20">
                         💡 <strong>حصة الموديل غير متاحة حاليًا:</strong>
                         <p className="mt-1 font-sans">
-                          {requiresUserApiKey
-                            ? 'استخدم مفتاحًا آخر له حصة متاحة أو انتظر تجدد الحصة.'
-                            : 'انتظر تجدد حصة مفتاح AI Studio الافتراضي ثم أعد المحاولة.'}
+                          يرجى الانتظار قليلاً لتجدد الحصة أو إعادة المحاولة لاحقاً.
                         </p>
-                        {requiresUserApiKey && (
-                          <div className="mt-2.5 flex justify-start">
-                            <button
-                              type="button"
-                              onClick={() => setShowApiKeyDialog(true)}
-                              className="px-3 py-1.5 bg-amber-500 hover:bg-amber-400 text-black rounded-lg text-[10px] font-bold transition-all cursor-pointer shadow-md shadow-amber-500/10 flex items-center gap-1"
-                            >
-                              <span>تغيير مفتاح Gemini 🔑</span>
-                            </button>
-                          </div>
-                        )}
                       </div>
                     )}
 
@@ -1380,7 +1367,7 @@ export default function App() {
 
             {/* Variants Switcher Panel */}
             {activeItem && activeItem.variants && activeItem.variants.length > 1 && !isComparing && (
-              <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-35 bg-neutral-900/95 border border-purple-500/30 backdrop-blur-2xl px-4 py-2.5 rounded-2xl shadow-2xl flex items-center gap-3">
+              <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-35 bg-neutral-900/95 border border-orange-500/30 backdrop-blur-2xl px-4 py-2.5 rounded-2xl shadow-2xl flex items-center gap-3">
                 <span className="text-[11px] text-neutral-300 font-sans shrink-0 font-semibold">البدائل المقترحة:</span>
                 <div className="flex gap-2">
                   {activeItem.variants.map((variantUrl, idx) => {
@@ -1397,11 +1384,11 @@ export default function App() {
                         }}
                         className={cn(
                           "relative w-11 h-11 rounded-lg overflow-hidden border transition-all cursor-pointer bg-neutral-950 shrink-0",
-                          isActive ? "border-purple-500 scale-110 ring-2 ring-purple-500/20 shadow-md" : "border-white/10 hover:border-white/30"
+                          isActive ? "border-orange-500 scale-110 ring-2 ring-orange-500/20 shadow-md" : "border-white/10 hover:border-white/30"
                         )}
                       >
                         <img src={variantUrl} alt={`Variant ${idx + 1}`} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
-                        <div className="absolute bottom-0 right-0 left-0 bg-purple-900/80 text-[8px] text-white text-center py-0.5 font-bold font-mono">
+                        <div className="absolute bottom-0 right-0 left-0 bg-orange-900/80 text-[8px] text-white text-center py-0.5 font-bold font-mono">
                           {idx + 1}
                         </div>
                       </button>
@@ -1461,7 +1448,7 @@ export default function App() {
                         className={cn(
                           "p-3 rounded-xl border cursor-pointer transition-all flex gap-3 select-none active:scale-[0.985]",
                           activeItemId === item.id 
-                            ? "border-purple-500/50 bg-purple-500/10" 
+                            ? "border-orange-500/50 bg-orange-500/10" 
                             : "border-white/5 bg-white/5 hover:bg-white/10"
                         )}
                         title="انقر للاختيار والتعديل، اضغط مطولاً لمعاينة الصورة الأصلية فورا 🔍"
@@ -1546,7 +1533,7 @@ export default function App() {
                 <div className="space-y-3">
                   <div className="flex items-center justify-between pb-2 border-b border-white/5">
                     <div className="flex items-center gap-2">
-                      <div className="w-6 h-6 rounded-md bg-purple-500/20 flex items-center justify-center text-purple-400">
+                      <div className="w-6 h-6 rounded-md bg-orange-500/20 flex items-center justify-center text-orange-400">
                         <Sparkles className="w-4 h-4" />
                       </div>
                       <div>
@@ -1573,7 +1560,7 @@ export default function App() {
                     setAppMode('vanish');
                     setTool('brush');
                   }}
-                  className="w-full py-2.5 px-3 rounded-xl bg-purple-500/10 hover:bg-purple-500/20 text-purple-300 border border-purple-500/20 hover:border-purple-500/40 transition-all font-bold text-xs flex items-center justify-center gap-1.5 cursor-pointer font-sans"
+                  className="w-full py-2.5 px-3 rounded-xl bg-orange-500/10 hover:bg-orange-500/20 text-orange-300 border border-orange-500/20 hover:border-orange-500/40 transition-all font-bold text-xs flex items-center justify-center gap-1.5 cursor-pointer font-sans"
                 >
                   <span>✨ الانتقال لوضع مسح العناصر (الفرشاة)</span>
                 </button>
@@ -1582,10 +1569,10 @@ export default function App() {
               {/* Prompt Input Textarea */}
               <div className="space-y-2">
                 <label className="text-xs font-bold text-neutral-200 flex items-start justify-between gap-2 font-sans leading-tight">
-                  <span className="text-purple-300 leading-snug break-words flex-1">
+                  <span className="text-orange-300 leading-snug break-words flex-1">
                     {activePromptTitle}
                   </span>
-                  <span className="text-[9px] text-purple-400/80 font-normal shrink-0 pt-0.5">(يُطبق على كافة الصور)</span>
+                  <span className="text-[9px] text-orange-400/80 font-normal shrink-0 pt-0.5">(يُطبق على كافة الصور)</span>
                 </label>
                 <textarea
                   value={prompt}
@@ -1595,7 +1582,7 @@ export default function App() {
                   }}
                   placeholder="مثال: أعد إنشاء هذه الصورة بجودة فائقة (Super Resolution) مع تحسين تفاصيل الإضاءة والظلال ورفع حدة الألوان مع إضافة تفاصيل كلين ديجيتال..."
                   disabled={isProcessing}
-                  className="w-full h-28 bg-black/50 border border-white/10 rounded-xl p-3 text-xs text-white placeholder:text-neutral-500 resize-none focus:outline-none focus:border-purple-500 transition-colors leading-relaxed font-sans"
+                  className="w-full h-28 bg-black/50 border border-white/10 rounded-xl p-3 text-xs text-white placeholder:text-neutral-500 resize-none focus:outline-none focus:border-orange-500 transition-colors leading-relaxed font-sans"
                 />
               </div>
 
@@ -1608,7 +1595,7 @@ export default function App() {
                       type="button"
                       disabled={isProcessing}
                       onClick={() => setShowAddPresetFormSidebar(!showAddPresetFormSidebar)}
-                      className="text-[10px] text-purple-400 hover:text-purple-300 transition-colors font-bold flex items-center gap-0.5 cursor-pointer disabled:opacity-50"
+                      className="text-[10px] text-orange-400 hover:text-orange-300 transition-colors font-bold flex items-center gap-0.5 cursor-pointer disabled:opacity-50"
                     >
                       <span>{showAddPresetFormSidebar ? 'إلغاء' : '➕ إضافة'}</span>
                     </button>
@@ -1630,25 +1617,25 @@ export default function App() {
                       initial={{ height: 0, opacity: 0 }}
                       animate={{ height: 'auto', opacity: 1 }}
                       exit={{ height: 0, opacity: 0 }}
-                      className="overflow-hidden bg-black/40 border border-purple-500/20 rounded-xl p-2.5 space-y-2 mb-2"
+                      className="overflow-hidden bg-black/40 border border-orange-500/20 rounded-xl p-2.5 space-y-2 mb-2"
                     >
                       <input
                         type="text"
                         placeholder="اسم النمط (مثال: ✨ دمج الإضاءة)"
                         value={newPresetName}
                         onChange={(e) => setNewPresetName(e.target.value)}
-                        className="w-full bg-neutral-900 border border-white/10 rounded-lg px-2.5 py-1.5 text-xs text-white focus:outline-none focus:border-purple-500"
+                        className="w-full bg-neutral-900 border border-white/10 rounded-lg px-2.5 py-1.5 text-xs text-white focus:outline-none focus:border-orange-500"
                       />
                       <textarea
                         placeholder="وصف البرومبت التفصيلي للنمط..."
                         value={newPresetPrompt}
                         onChange={(e) => setNewPresetPrompt(e.target.value)}
-                        className="w-full bg-neutral-900 border border-white/10 rounded-lg p-2 text-xs text-white placeholder:text-neutral-500 resize-none h-16 focus:outline-none focus:border-purple-500"
+                        className="w-full bg-neutral-900 border border-white/10 rounded-lg p-2 text-xs text-white placeholder:text-neutral-500 resize-none h-16 focus:outline-none focus:border-orange-500"
                       />
                       <button
                         type="button"
                         onClick={() => handleAddPreset(newPresetName, newPresetPrompt)}
-                        className="w-full py-1.5 rounded-lg bg-purple-600 hover:bg-purple-500 text-white text-xs font-bold transition-colors cursor-pointer"
+                        className="w-full py-1.5 rounded-lg bg-orange-500 hover:bg-orange-600 text-white text-xs font-bold transition-colors cursor-pointer"
                       >
                         حفظ النمط
                       </button>
@@ -1660,18 +1647,18 @@ export default function App() {
                   {presets.map((p, i) => {
                     const isSelected = activePreset?.name === p.name;
                     return editingPresetIndex === i ? (
-                      <div key={i} className="flex flex-col gap-1.5 p-2 rounded-xl bg-purple-950/50 border border-purple-500/40 w-full font-sans my-1">
+                      <div key={i} className="flex flex-col gap-1.5 p-2 rounded-xl bg-orange-950/50 border border-orange-500/40 w-full font-sans my-1">
                         <input
                           type="text"
                           value={editingPresetName}
                           onChange={(e) => setEditingPresetName(e.target.value)}
-                          className="w-full bg-black/60 border border-white/10 rounded-lg px-2.5 py-1 text-xs text-white focus:outline-none focus:border-purple-500 font-bold"
+                          className="w-full bg-black/60 border border-white/10 rounded-lg px-2.5 py-1 text-xs text-white focus:outline-none focus:border-orange-500 font-bold"
                           placeholder="اسم النمط..."
                         />
                         <textarea
                           value={editingPresetPrompt}
                           onChange={(e) => setEditingPresetPrompt(e.target.value)}
-                          className="w-full h-16 bg-black/60 border border-white/10 rounded-lg p-2 text-xs text-white placeholder:text-neutral-500 resize-none focus:outline-none focus:border-purple-500 leading-relaxed font-sans"
+                          className="w-full h-16 bg-black/60 border border-white/10 rounded-lg p-2 text-xs text-white placeholder:text-neutral-500 resize-none focus:outline-none focus:border-orange-500 leading-relaxed font-sans"
                           placeholder="نص البرومبت..."
                         />
                         <div className="flex items-center justify-end gap-1.5 pt-0.5">
@@ -1685,7 +1672,7 @@ export default function App() {
                           <button
                             type="button"
                             onClick={() => handleSaveEditPreset(i)}
-                            className="px-2.5 py-1 rounded-lg bg-purple-600 hover:bg-purple-500 text-white text-[10px] font-bold transition-colors cursor-pointer flex items-center gap-1"
+                            className="px-2.5 py-1 rounded-lg bg-orange-500 hover:bg-orange-600 text-white text-[10px] font-bold transition-colors cursor-pointer flex items-center gap-1"
                           >
                             <Check className="w-3 h-3" />
                             <span>حفظ التعديل</span>
@@ -1698,8 +1685,8 @@ export default function App() {
                         className={cn(
                           "group relative flex items-center justify-between rounded-xl border transition-all w-full pl-2 pr-3.5 py-1.5 font-sans",
                           isSelected
-                            ? "bg-purple-600/20 border-purple-500/60 shadow-sm shadow-purple-500/10"
-                            : "bg-neutral-800/40 hover:bg-purple-600/10 border-white/5 hover:border-purple-500/20"
+                            ? "bg-orange-500/20 border-orange-500/60 shadow-sm shadow-orange-500/10"
+                            : "bg-neutral-800/40 hover:bg-orange-500/10 border-white/5 hover:border-orange-500/20"
                         )}
                       >
                         <button
@@ -1709,10 +1696,10 @@ export default function App() {
                             setPrompt(p.prompt);
                             setSelectedPresetName(p.name);
                           }}
-                          className="flex-1 text-right text-xs text-neutral-200 hover:text-purple-200 font-bold cursor-pointer min-w-0 disabled:opacity-50 flex items-center gap-1.5 justify-start"
+                          className="flex-1 text-right text-xs text-neutral-200 hover:text-orange-200 font-bold cursor-pointer min-w-0 disabled:opacity-50 flex items-center gap-1.5 justify-start"
                           title="تطبيق نص البرومبت مع الاحتفاظ بالأبعاد المحددة"
                         >
-                          {isSelected && <span className="text-purple-400 font-black text-xs shrink-0">✓</span>}
+                          {isSelected && <span className="text-orange-400 font-black text-xs shrink-0">✓</span>}
                           <span className="block truncate leading-relaxed text-right" dir="rtl">
                             {p.name}
                           </span>
@@ -1740,7 +1727,7 @@ export default function App() {
                             type="button"
                             disabled={isProcessing}
                             onClick={(e) => handleStartEditPreset(i, e)}
-                            className="opacity-50 hover:opacity-100 p-1 rounded-lg hover:bg-purple-500/20 text-neutral-400 hover:text-purple-300 transition-all cursor-pointer flex shrink-0 disabled:opacity-30"
+                            className="opacity-50 hover:opacity-100 p-1 rounded-lg hover:bg-orange-500/20 text-neutral-400 hover:text-orange-300 transition-all cursor-pointer flex shrink-0 disabled:opacity-30"
                             title="تعديل هذا النمط"
                           >
                             <Pencil className="w-3 h-3" />
@@ -1775,10 +1762,10 @@ export default function App() {
               </div>
 
               {/* Batch Merge Option Card */}
-              <div className="space-y-3 bg-purple-950/20 p-3 rounded-xl border border-purple-500/25">
+              <div className="space-y-3 bg-orange-950/20 p-3 rounded-xl border border-orange-500/25">
                 <div className="flex justify-between items-center text-xs text-neutral-300">
                   <div className="flex flex-col">
-                    <span className="font-bold font-sans text-purple-200">🧩 دمج كافة صور الباتش في صورة واحدة</span>
+                    <span className="font-bold font-sans text-orange-200">🧩 دمج كافة صور الباتش في صورة واحدة</span>
                     <span className="text-[9px] text-neutral-400 font-normal mt-0.5">دمج وتجميع العناصر والمنتجات المرفوعة في تكوين سينمائي موحد</span>
                   </div>
                   <label className="relative inline-flex items-center cursor-pointer shrink-0">
@@ -1789,12 +1776,12 @@ export default function App() {
                       disabled={isProcessing}
                       className="sr-only peer" 
                     />
-                    <div className="w-8 h-4 bg-neutral-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-neutral-300 after:border after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-purple-600"></div>
+                    <div className="w-8 h-4 bg-neutral-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-neutral-300 after:border after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-orange-500"></div>
                   </label>
                 </div>
                 {enableBatchMerge && (
-                  <div className="space-y-1.5 pt-1.5 border-t border-purple-500/15">
-                    <p className="text-[10px] text-purple-300/90 leading-relaxed font-sans">
+                  <div className="space-y-1.5 pt-1.5 border-t border-orange-500/15">
+                    <p className="text-[10px] text-orange-300/90 leading-relaxed font-sans">
                       ✨ <strong>آلية الدمج التلقائية:</strong> سيتم أخذ جميع الصور المرفوعة في الباتش ({items.length} صور) ودمجها وتنسيق عناصرها معاً بشكل موحد.
                     </p>
                     <p className="text-[9px] text-neutral-400 font-sans">
@@ -1819,7 +1806,7 @@ export default function App() {
                       disabled={isProcessing}
                       className="sr-only peer" 
                     />
-                    <div className="w-8 h-4 bg-neutral-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-neutral-300 after:border after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-purple-600"></div>
+                    <div className="w-8 h-4 bg-neutral-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-neutral-300 after:border after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-orange-500"></div>
                   </label>
                 </div>
                 {batchEnableMultiVariant ? (
@@ -1836,7 +1823,7 @@ export default function App() {
                             className={cn(
                               "px-2 py-0.5 rounded text-[10px] font-bold transition-all cursor-pointer font-sans",
                               batchVariantsCount === count 
-                                ? "bg-purple-600 text-white shadow-md shadow-purple-500/15" 
+                                ? "bg-orange-500 text-white shadow-md shadow-orange-500/15" 
                                 : "text-neutral-400 hover:text-white"
                             )}
                           >
@@ -1863,9 +1850,9 @@ export default function App() {
                     <button
                       type="button"
                       disabled
-                      className="w-full py-3 px-4 rounded-xl bg-purple-600/30 text-purple-300 font-bold text-xs flex items-center justify-center gap-2 animate-pulse font-sans"
+                      className="w-full py-3 px-4 rounded-xl bg-orange-500/30 text-orange-300 font-bold text-xs flex items-center justify-center gap-2 animate-pulse font-sans"
                     >
-                      <Loader2 className="w-4 h-4 animate-spin text-purple-400" />
+                      <Loader2 className="w-4 h-4 animate-spin text-orange-400" />
                       <span>{enableBatchMerge ? "جاري دمج كافة الصور في صورة واحدة..." : "جاري التوليد بالتوازي حالاً..."}</span>
                     </button>
                     <button
@@ -1877,7 +1864,7 @@ export default function App() {
                       <span>إيقاف المعالجة إجبارياً 🛑</span>
                     </button>
                     <div className="w-full bg-neutral-900 h-1.5 rounded-full overflow-hidden">
-                      <div className="bg-purple-500 h-full animate-pulse" style={{ width: '100%' }}></div>
+                      <div className="bg-orange-500 h-full animate-pulse" style={{ width: '100%' }}></div>
                     </div>
                   </div>
                 ) : (
@@ -1885,7 +1872,7 @@ export default function App() {
                     type="button"
                     onClick={processAll}
                     disabled={enableBatchMerge ? items.length === 0 : items.filter(i => i.status === 'pending' || i.status === 'error').length === 0}
-                    className="w-full py-3.5 px-4 rounded-xl bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-500 hover:to-blue-500 disabled:opacity-40 disabled:from-neutral-800 disabled:to-neutral-800 disabled:cursor-not-allowed text-white font-bold text-xs shadow-lg shadow-purple-500/10 flex items-center justify-center gap-1.5 transition-all cursor-pointer transform hover:scale-[1.01] font-sans"
+                    className="w-full py-3.5 px-4 rounded-xl bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-600 hover:to-amber-600 disabled:opacity-40 disabled:from-neutral-800 disabled:to-neutral-800 disabled:cursor-not-allowed text-white font-bold text-xs shadow-lg shadow-orange-500/10 flex items-center justify-center gap-1.5 transition-all cursor-pointer transform hover:scale-[1.01] font-sans"
                   >
                     <Sparkles className="w-4 h-4 animate-bounce" />
                     <span>{enableBatchMerge ? "دمج كافة الصور في صورة واحدة 🧩" : "تشغيل المعالجة بالتوازي لجميع الصور ⚡"}</span>
@@ -1918,8 +1905,8 @@ export default function App() {
                       <span className="font-sans text-[9px] text-green-400">مكتملة:</span>
                       <span>{items.filter(i => i.status === 'completed').length}</span>
                     </div>
-                    <div className="flex items-center gap-1 text-[11px] bg-purple-500/10 px-2.5 py-1 rounded-full border border-purple-500/20 font-semibold text-purple-300 font-mono">
-                      <span className="font-sans text-[9px] text-purple-400">قيد المعالجة:</span>
+                    <div className="flex items-center gap-1 text-[11px] bg-orange-500/10 px-2.5 py-1 rounded-full border border-orange-500/20 font-semibold text-orange-300 font-mono">
+                      <span className="font-sans text-[9px] text-orange-400">قيد المعالجة:</span>
                       <span>{items.filter(i => i.status === 'processing').length}</span>
                     </div>
                     <div className="flex items-center gap-1 text-[11px] bg-neutral-800 px-2.5 py-1 rounded-full font-semibold text-neutral-400 font-mono">
@@ -2025,16 +2012,16 @@ export default function App() {
               {items.length === 0 ? (
                 <div 
                   onClick={() => fileInputRef.current?.click()}
-                  className="flex-1 min-h-[350px] border-2 border-dashed border-neutral-800 hover:border-purple-500/40 bg-neutral-900/10 hover:bg-purple-950/5 rounded-3xl flex flex-col items-center justify-center p-8 text-center transition-all cursor-pointer select-none group"
+                  className="flex-1 min-h-[350px] border-2 border-dashed border-neutral-800 hover:border-orange-500/40 bg-neutral-900/10 hover:bg-orange-950/5 rounded-3xl flex flex-col items-center justify-center p-8 text-center transition-all cursor-pointer select-none group"
                 >
-                  <div className="w-16 h-16 rounded-2xl bg-neutral-900 border border-white/5 flex items-center justify-center text-neutral-400 group-hover:text-purple-400 group-hover:border-purple-500/20 transition-all mb-4 shadow-xl">
+                  <div className="w-16 h-16 rounded-2xl bg-neutral-900 border border-white/5 flex items-center justify-center text-neutral-400 group-hover:text-orange-400 group-hover:border-orange-500/20 transition-all mb-4 shadow-xl">
                     <Upload className="w-8 h-8 group-hover:scale-110 transition-transform animate-bounce" />
                   </div>
                   <h4 className="text-base font-bold text-neutral-200 group-hover:text-white transition-colors mb-2 font-sans">قم برفع صور المعالجة الجماعية (Batch)</h4>
                   <p className="text-xs text-neutral-400 max-w-sm leading-relaxed mb-6 font-sans">
                     ارفع حتى 100 صورة مرة واحدة. تُحفظ الصور كملفات خفيفة في الذاكرة وتدخل طابور معالجة متدرج لمنع تهنيج المتصفح أو استهلاك الحصة دفعة واحدة.
                   </p>
-                  <span className="px-4 py-2 bg-purple-600 hover:bg-purple-500 text-white text-xs font-bold rounded-xl shadow-lg shadow-purple-500/10 transition-colors font-sans">
+                  <span className="px-4 py-2 bg-orange-500 hover:bg-orange-600 text-white text-xs font-bold rounded-xl shadow-lg shadow-orange-500/10 transition-colors font-sans">
                     اختيار الصور من الجهاز 💻
                   </span>
                 </div>
@@ -2052,6 +2039,7 @@ export default function App() {
                   onDelete={handleDeleteItem}
                   onDownload={handleDownload}
                   onStop={handleForceStop}
+                  onManageApiKey={() => setShowApiKeyDialog(true)}
                 />
               )}
 
@@ -2126,7 +2114,7 @@ export default function App() {
             onPointerUp={handleItemPressEnd}
           >
             <div className="absolute top-6 right-6 flex flex-col items-end gap-1.5" dir="rtl">
-              <span className="text-sm font-bold text-white bg-purple-600/90 px-3.5 py-1.5 rounded-xl border border-purple-500/30 shadow-xl font-sans">
+              <span className="text-sm font-bold text-white bg-orange-500/90 px-3.5 py-1.5 rounded-xl border border-orange-500/30 shadow-xl font-sans">
                 👀 جاري معاينة الصورة الأصلية
               </span>
               <span className="text-[10px] text-neutral-400 font-medium font-sans">
@@ -2167,6 +2155,15 @@ export default function App() {
         onClearImages={() => void handleClearAllArchiveImages()}
         onActivateImage={handleAddFromDbToActive}
         onDeleteImage={handleDeleteFromDb}
+      />
+
+      <ApiKeyDialog
+        open={showApiKeyDialog}
+        required={requiresUserApiKey}
+        hasSavedKey={hasUserApiKey}
+        onClose={() => setShowApiKeyDialog(false)}
+        onSave={handleSaveApiKey}
+        onForget={handleForgetApiKey}
       />
     </div>
   );

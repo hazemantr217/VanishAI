@@ -48,18 +48,30 @@ async function parseApiError(response: Response): Promise<Error> {
   try {
     payload = await response.json() as ApiErrorResponse;
   } catch {
-    // Fall back to the status text without exposing an HTML error response.
+    // Fall back to status without failing on HTML/text error bodies.
   }
 
-  if (response.status === 403 && !payload?.error && !response.headers.get('x-request-id')) {
+  if (payload?.error) {
+    const error = new Error(payload.error);
+    error.name = payload.code || 'API_ERROR';
+    return error;
+  }
+
+  if (response.status === 403) {
     const proxyError = new Error(
-      'حجب Google AI Studio Preview الطلب قبل وصوله إلى خادم التطبيق. أعد تشغيل Preview ثم أعد المحاولة.',
+      'تم رفض الطلب (403). يرجى التحقق من صحة مفتاح Gemini API وصلاحياته.',
     );
-    proxyError.name = 'AI_STUDIO_PROXY_FORBIDDEN';
+    proxyError.name = 'ACCESS_DENIED';
     return proxyError;
   }
 
-  const error = new Error(payload?.error || `فشل الطلب (${response.status}).`);
+  if (response.status === 401) {
+    const error = new Error('مفتاح API غير متوفر أو غير صالح. يرجى إدخال مفتاح صالح.');
+    error.name = 'API_KEY_REQUIRED';
+    return error;
+  }
+
+  const error = new Error(`فشل الطلب (${response.status} ${response.statusText || ''}).`);
   error.name = payload?.code || 'API_ERROR';
   return error;
 }

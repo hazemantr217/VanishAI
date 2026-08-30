@@ -16,6 +16,7 @@ interface BatchGridProps {
   onDelete: (id: string) => void;
   onDownload: (imageUrl: string, filename: string) => void;
   onStop: () => void;
+  onManageApiKey?: () => void;
 }
 
 function BatchGrid({
@@ -31,6 +32,7 @@ function BatchGrid({
   onDelete,
   onDownload,
   onStop,
+  onManageApiKey,
 }: BatchGridProps) {
   return (
     <div className="grid grid-cols-1 gap-4 pb-12 sm:grid-cols-2 sm:gap-6 xl:grid-cols-3">
@@ -71,6 +73,7 @@ function BatchGrid({
               : candidate));
           }}
           onImageDoubleClick={() => setLightboxItemId(item.id)}
+          onManageApiKey={onManageApiKey}
         />
       ))}
     </div>

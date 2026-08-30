@@ -218,14 +218,14 @@ export default function ImageLightbox({
         {/* Top Header Controls */}
         <div className="flex items-center justify-between gap-4 border-b border-white/5 pb-4 shrink-0">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-purple-600/10 border border-purple-500/20 flex items-center justify-center">
-              <ImageIcon className="w-5 h-5 text-purple-400" />
+            <div className="w-10 h-10 rounded-xl bg-orange-600/10 border border-orange-500/20 flex items-center justify-center">
+              <ImageIcon className="w-5 h-5 text-orange-400" />
             </div>
             <div>
               <div className="flex items-center gap-2">
                 <h3 className="text-sm md:text-base font-bold text-white font-sans">معاينة متقدمة وتكبير عالي الدقة</h3>
                 {totalItems > 1 && (
-                  <span className="text-[11px] font-mono font-bold bg-purple-950/70 border border-purple-500/30 text-purple-300 px-2 py-0.5 rounded-full">
+                  <span className="text-[11px] font-mono font-bold bg-orange-950/70 border border-orange-500/30 text-orange-300 px-2 py-0.5 rounded-full">
                     {idx + 1} / {totalItems}
                   </span>
                 )}
@@ -268,7 +268,7 @@ export default function ImageLightbox({
                   className={cn(
                     "px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1",
                     viewMode === 'result'
-                      ? "bg-purple-600 text-white shadow-md shadow-purple-500/20"
+                      ? "bg-orange-500 text-white shadow-md shadow-orange-500/20"
                       : "text-neutral-400 hover:text-white"
                   )}
                 >
@@ -280,7 +280,7 @@ export default function ImageLightbox({
                   className={cn(
                     "px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1",
                     viewMode === 'side-by-side'
-                      ? "bg-purple-600 text-white shadow-md shadow-purple-500/20"
+                      ? "bg-orange-500 text-white shadow-md shadow-orange-500/20"
                       : "text-neutral-400 hover:text-white"
                   )}
                 >
@@ -301,7 +301,7 @@ export default function ImageLightbox({
               >
                 <ZoomIn className="w-4 h-4" />
               </button>
-              <span className="text-[11px] font-mono font-bold text-purple-300 px-1.5 min-w-[3rem] text-center select-none">
+              <span className="text-[11px] font-mono font-bold text-orange-300 px-1.5 min-w-[3rem] text-center select-none">
                 {Math.round(zoomScale * 100)}%
               </span>
               <button
@@ -384,7 +384,7 @@ export default function ImageLightbox({
                 e.stopPropagation();
                 onPrevItem?.();
               }}
-              className="absolute right-2 md:right-5 top-1/2 -translate-y-1/2 z-40 p-3 md:p-4 rounded-2xl bg-black/75 hover:bg-purple-600/90 text-white border border-white/15 hover:border-purple-400/50 shadow-2xl backdrop-blur-md transition-all hover:scale-110 active:scale-95 flex items-center justify-center cursor-pointer group"
+              className="absolute right-2 md:right-5 top-1/2 -translate-y-1/2 z-40 p-3 md:p-4 rounded-2xl bg-black/75 hover:bg-orange-600/90 text-white border border-white/15 hover:border-orange-400/50 shadow-2xl backdrop-blur-md transition-all hover:scale-110 active:scale-95 flex items-center justify-center cursor-pointer group"
               title="الصورة السابقة (السهم الأيمن ▶)"
             >
               <ChevronRight className="w-6 h-6 md:w-7 md:h-7 transition-transform group-hover:translate-x-0.5" />
@@ -400,7 +400,7 @@ export default function ImageLightbox({
                 e.stopPropagation();
                 onNextItem?.();
               }}
-              className="absolute left-2 md:left-5 top-1/2 -translate-y-1/2 z-40 p-3 md:p-4 rounded-2xl bg-black/75 hover:bg-purple-600/90 text-white border border-white/15 hover:border-purple-400/50 shadow-2xl backdrop-blur-md transition-all hover:scale-110 active:scale-95 flex items-center justify-center cursor-pointer group"
+              className="absolute left-2 md:left-5 top-1/2 -translate-y-1/2 z-40 p-3 md:p-4 rounded-2xl bg-black/75 hover:bg-orange-600/90 text-white border border-white/15 hover:border-orange-400/50 shadow-2xl backdrop-blur-md transition-all hover:scale-110 active:scale-95 flex items-center justify-center cursor-pointer group"
               title="الصورة التالية (السهم الأيسر ◀)"
             >
               <ChevronLeft className="w-6 h-6 md:w-7 md:h-7 transition-transform group-hover:-translate-x-0.5" />
@@ -499,7 +499,7 @@ export default function ImageLightbox({
                     style={{ left: `${sliderPosition}%` }}
                   >
                     <div className="w-1 h-full bg-white shadow-[0_0_12px_rgba(255,255,255,0.9)]" />
-                    <div className="absolute w-8 h-8 rounded-full bg-white text-black border-2 border-purple-600 flex items-center justify-center shadow-lg pointer-events-none scale-100 group-hover:scale-110 transition-transform">
+                    <div className="absolute w-8 h-8 rounded-full bg-white text-black border-2 border-orange-500 flex items-center justify-center shadow-lg pointer-events-none scale-100 group-hover:scale-110 transition-transform">
                       <Split className="w-4 h-4" />
                     </div>
                   </div>
@@ -512,7 +512,7 @@ export default function ImageLightbox({
                 <div className="absolute bottom-4 right-4 bg-black/80 px-3 py-1.5 rounded-lg text-[10px] md:text-xs font-bold text-white border border-white/10 font-sans z-20 backdrop-blur-md flex items-center gap-2">
                   <span>النتيجة ✨</span>
                   {zoomScale > 1 && (
-                    <span className="bg-purple-600/90 text-purple-100 px-1.5 py-0.5 rounded text-[10px] font-mono">
+                    <span className="bg-orange-500/90 text-orange-100 px-1.5 py-0.5 rounded text-[10px] font-mono">
                       {Math.round(zoomScale * 100)}%
                     </span>
                   )}
@@ -570,7 +570,7 @@ export default function ImageLightbox({
                     onMouseDown={(e) => e.stopPropagation()}
                     onTouchStart={(e) => e.stopPropagation()}
                   >
-                    <span className="text-[10px] text-purple-300 font-bold font-sans ml-1">الصور المدمجة ({item.inputImages.length}):</span>
+                    <span className="text-[10px] text-orange-300 font-bold font-sans ml-1">الصور المدمجة ({item.inputImages.length}):</span>
                     <div className="flex items-center gap-1.5 overflow-x-auto max-w-[80vw] py-0.5">
                       {item.inputImages.map((imgSrc, imgIdx) => {
                         const isSelected = selectedInputIdx === imgIdx;
@@ -608,7 +608,7 @@ export default function ImageLightbox({
                       : (viewMode === 'original' ? `🖼️ الصورة المدخلة #${selectedInputIdx + 1}` : "✨ النتيجة المعالجة")}
                   </span>
                   {zoomScale > 1 && (
-                    <span className="bg-purple-600/90 text-purple-100 px-1.5 py-0.5 rounded text-[10px] font-mono">
+                    <span className="bg-orange-500/90 text-orange-100 px-1.5 py-0.5 rounded text-[10px] font-mono">
                       {Math.round(zoomScale * 100)}%
                     </span>
                   )}
@@ -624,7 +624,7 @@ export default function ImageLightbox({
             <div className="w-full md:w-auto flex flex-col gap-2">
               <div className="flex items-center gap-2">
                 <span className="text-xs text-neutral-300 font-bold font-sans">تصفح واختيار البدائل المتولدة ({variants.length}):</span>
-                <span className="text-[10px] bg-purple-950/70 border border-purple-500/30 text-purple-300 px-2 py-0.5 rounded-md font-mono font-bold flex items-center gap-1">
+                <span className="text-[10px] bg-orange-950/70 border border-orange-500/30 text-orange-300 px-2 py-0.5 rounded-md font-mono font-bold flex items-center gap-1">
                   <span>▲ ▼ بالأسهم</span>
                   <span className="text-neutral-400 font-normal">({activeVariantIdx + 1} من {variants.length})</span>
                 </span>
@@ -644,14 +644,14 @@ export default function ImageLightbox({
                       className={cn(
                         "relative w-16 h-16 rounded-xl overflow-hidden border-2 transition-all cursor-pointer bg-neutral-950 shrink-0 group",
                         isSelected
-                          ? "border-purple-500 scale-105 ring-4 ring-purple-500/25 shadow-lg shadow-purple-500/30"
+                          ? "border-orange-500 scale-105 ring-4 ring-orange-500/25 shadow-lg shadow-orange-500/30"
                           : "border-white/10 hover:border-white/30 opacity-70 hover:opacity-100"
                       )}
                     >
                       <img src={variantUrl} alt={`VariantOption ${vIdx + 1}`} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
                       <div className={cn(
                         "absolute inset-x-0 bottom-0 text-[9px] text-center py-0.5 font-bold font-sans transition-colors",
-                        isSelected ? "bg-purple-600 text-white" : "bg-black/80 text-neutral-300 group-hover:text-white"
+                        isSelected ? "bg-orange-500 text-white" : "bg-black/80 text-neutral-300 group-hover:text-white"
                       )}>
                         {isSelected ? `✓ البديل ${vIdx + 1}` : `البديل ${vIdx + 1}`}
                       </div>
@@ -670,17 +670,17 @@ export default function ImageLightbox({
           {/* Keyboard & Interactive Controls Legend */}
           <div className="flex flex-wrap items-center justify-center md:justify-end gap-2 text-[10px] font-sans">
             <span className="bg-neutral-900/90 border border-white/10 text-neutral-300 px-2.5 py-1 rounded-lg flex items-center gap-1.5 shadow-sm">
-              <span className="font-mono bg-purple-500/20 text-purple-300 px-1.5 py-0.5 rounded text-[9px] font-bold">◀ ▶</span>
+              <span className="font-mono bg-orange-500/20 text-orange-300 px-1.5 py-0.5 rounded text-[9px] font-bold">◀ ▶</span>
               <span>تبديل الصور</span>
             </span>
             {variants.length > 1 && (
-              <span className="bg-purple-950/70 border border-purple-500/30 text-purple-200 px-2.5 py-1 rounded-lg flex items-center gap-1.5 shadow-sm">
-                <span className="font-mono bg-purple-500/30 text-purple-300 px-1.5 py-0.5 rounded text-[9px] font-bold">▲ ▼</span>
+              <span className="bg-orange-950/70 border border-orange-500/30 text-orange-200 px-2.5 py-1 rounded-lg flex items-center gap-1.5 shadow-sm">
+                <span className="font-mono bg-orange-500/30 text-orange-300 px-1.5 py-0.5 rounded text-[9px] font-bold">▲ ▼</span>
                 <span>تبديل البدائل واختيارها</span>
               </span>
             )}
             <span className="bg-neutral-900/90 border border-white/10 text-neutral-300 px-2.5 py-1 rounded-lg flex items-center gap-1.5 shadow-sm">
-              <span className="font-mono bg-purple-500/20 text-purple-300 px-1.5 py-0.5 rounded text-[9px] font-bold">Zoom</span>
+              <span className="font-mono bg-orange-500/20 text-orange-300 px-1.5 py-0.5 rounded text-[9px] font-bold">Zoom</span>
               <span>نقر مزدوج أو عجلة الماوس</span>
             </span>
             <span className="bg-neutral-900/90 border border-white/10 text-neutral-400 px-2 py-1 rounded-lg flex items-center gap-1 shadow-sm">

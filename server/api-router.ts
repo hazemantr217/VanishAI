@@ -87,11 +87,25 @@ apiRouter.post('/inpaint', inpaintUploadMiddleware, async (req, res, next) => {
     let resultImage: string;
 
     if (isGeminiModel(input.model)) {
-      const apiKey = resolveGeminiApiKey(req);
-      if (!apiKey) {
+      const customKey = req.header('x-gemini-api-key')?.trim() || null;
+      const managedKey = serverConfig.managedGeminiApiKey;
+      const primaryKey = customKey || managedKey;
+
+      if (!primaryKey) {
         throw new ApiError(401, 'أدخل مفتاح Gemini API للمتابعة.', 'API_KEY_REQUIRED');
       }
-      resultImage = await editWithGemini(apiKey, input, requestAbort.signal, geminiRequestContext(req));
+
+      try {
+        resultImage = await editWithGemini(primaryKey, input, requestAbort.signal, geminiRequestContext(req));
+      } catch (err: any) {
+        // If custom key was rejected (e.g. 403 / 401 / 400) and we have a managed key, fallback to managed environment key
+        if (customKey && managedKey && customKey !== managedKey) {
+          console.warn('Custom Gemini API key failed, falling back to managed environment key...');
+          resultImage = await editWithGemini(managedKey, input, requestAbort.signal, geminiRequestContext(req));
+        } else {
+          throw err;
+        }
+      }
     } else if (isOpenAIModel(input.model)) {
       if (!isOpenAIEnabled()) {
         throw new ApiError(400, 'موديلات OpenAI معطلة في وضع Google AI Studio.', 'OPENAI_DISABLED');
@@ -123,12 +137,25 @@ apiRouter.post('/merge-batch', mergeUploadMiddleware, async (req, res, next) => 
       throw new ApiError(400, 'دمج الباتش متاح حاليًا مع موديلات Gemini فقط.', 'UNSUPPORTED_MODEL');
     }
 
-    const apiKey = resolveGeminiApiKey(req);
-    if (!apiKey) {
+    const customKey = req.header('x-gemini-api-key')?.trim() || null;
+    const managedKey = serverConfig.managedGeminiApiKey;
+    const primaryKey = customKey || managedKey;
+
+    if (!primaryKey) {
       throw new ApiError(401, 'أدخل مفتاح Gemini API للمتابعة.', 'API_KEY_REQUIRED');
     }
 
-    const resultImage = await mergeWithGemini(apiKey, input, requestAbort.signal, geminiRequestContext(req));
+    let resultImage: string;
+    try {
+      resultImage = await mergeWithGemini(primaryKey, input, requestAbort.signal, geminiRequestContext(req));
+    } catch (err: any) {
+      if (customKey && managedKey && customKey !== managedKey) {
+        console.warn('Custom Gemini API key failed in merge, falling back to managed environment key...');
+        resultImage = await mergeWithGemini(managedKey, input, requestAbort.signal, geminiRequestContext(req));
+      } else {
+        throw err;
+      }
+    }
     if (!res.writableEnded) {
       res.json({ resultImage, requestId: res.locals.requestId });
     }

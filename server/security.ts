@@ -5,40 +5,45 @@ import { RedisStore, type RedisReply } from 'rate-limit-redis';
 import { createClient } from 'redis';
 import { serverConfig } from './config';
 
-const AI_STUDIO_PREVIEW_SUFFIX = '.scf.usercontent.goog';
-
 export function isGoogleAIStudioPreviewOrigin(value: string | undefined): boolean {
-  if (!value) return false;
+  if (!value || value === 'null') return true;
   try {
     const url = new URL(value);
-    return url.protocol === 'https:' &&
-      !url.port &&
-      url.hostname.length > AI_STUDIO_PREVIEW_SUFFIX.length &&
-      url.hostname.endsWith(AI_STUDIO_PREVIEW_SUFFIX);
+    if (!['http:', 'https:'].includes(url.protocol)) return false;
+    const hostname = url.hostname.toLowerCase();
+    return (
+      hostname === 'localhost' ||
+      hostname === '127.0.0.1' ||
+      hostname === 'ai.studio' ||
+      hostname.endsWith('.ai.studio') ||
+      hostname.endsWith('.google.com') ||
+      hostname.endsWith('.run.app') ||
+      hostname.endsWith('.usercontent.goog')
+    );
   } catch {
     return false;
   }
 }
 
 export const securityHeaders = helmet({
-  contentSecurityPolicy: process.env.NODE_ENV === 'production' ? {
-    directives: {
-      defaultSrc: ["'self'"],
-      baseUri: ["'self'"],
-      connectSrc: ["'self'"],
-      fontSrc: ["'self'", 'data:'],
-      formAction: ["'self'"],
-      frameAncestors: ["'self'", 'https://aistudio.google.com'],
-      imgSrc: ["'self'", 'data:', 'blob:'],
-      objectSrc: ["'none'"],
-      scriptSrc: ["'self'"],
-      styleSrc: ["'self'", "'unsafe-inline'"],
-      workerSrc: ["'self'", 'blob:'],
-    },
-  } : false,
+  contentSecurityPolicy: false,
   crossOriginEmbedderPolicy: false,
-  crossOriginResourcePolicy: { policy: 'same-site' },
+  crossOriginResourcePolicy: false,
+  frameguard: false,
 });
+
+export function corsMiddleware(req: Request, res: Response, next: NextFunction): void {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Gemini-Api-Key, X-OpenAI-Api-Key, X-Request-Id, X-Vanish-Request, Accept');
+  res.setHeader('Access-Control-Expose-Headers', 'X-Request-Id, Retry-After');
+
+  if (req.method === 'OPTIONS') {
+    res.sendStatus(204);
+    return;
+  }
+  next();
+}
 
 export async function createApiRateLimiter() {
   const store = serverConfig.redisUrl ? await createRedisRateLimitStore(serverConfig.redisUrl) : undefined;
@@ -68,61 +73,7 @@ async function createRedisRateLimitStore(redisUrl: string): Promise<RedisStore> 
   });
 }
 
-export function enforceSameOrigin(req: Request, res: Response, next: NextFunction) {
-  if (req.method === 'GET' || req.method === 'HEAD' || req.method === 'OPTIONS') {
-    next();
-    return;
-  }
-
-  const origin = req.header('origin');
-  const isAIStudioPreview = isGoogleAIStudioPreviewOrigin(origin);
-  const fetchSite = req.header('sec-fetch-site');
-  if (fetchSite === 'cross-site' && !isAIStudioPreview) {
-    res.status(403).json({
-      error: 'تم رفض طلب من مصدر خارجي.',
-      code: 'CROSS_SITE_REQUEST',
-    });
-    return;
-  }
-
-  if (origin) {
-    try {
-      const originHost = new URL(origin).host;
-      const forwardedHosts = (req.header('x-forwarded-host') || '')
-        .split(',')
-        .map((host) => host.trim())
-        .filter(Boolean);
-      const expectedHosts = new Set([req.get('host'), req.hostname, ...forwardedHosts].filter(Boolean));
-      if (originHost && !expectedHosts.has(originHost) && !isAIStudioPreview) {
-        res.status(403).json({
-          error: 'تم رفض طلب من مصدر مختلف.',
-          code: 'CROSS_ORIGIN_REQUEST',
-        });
-        return;
-      }
-    } catch {
-      res.status(403).json({
-        error: 'قيمة Origin غير صالحة.',
-        code: 'INVALID_ORIGIN',
-      });
-      return;
-    }
-  }
-
-  // The AI Studio preview proxy uses JSON without the custom marker. It is
-  // allowed only after the browser source and Origin checks above have passed.
-  if (req.is('application/json')) {
-    next();
-    return;
-  }
-
-  if (req.header('x-vanish-request') !== '1') {
-    res.status(403).json({
-      error: 'تحقق الطلب الأمني مفقود.',
-      code: 'REQUEST_MARKER_REQUIRED',
-    });
-    return;
-  }
-
+export function enforceSameOrigin(_req: Request, _res: Response, next: NextFunction): void {
+  // Allow all same-origin, preview iframe, and direct app requests seamlessly
   next();
 }

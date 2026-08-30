@@ -29,14 +29,10 @@ export function useRuntimeCredentials() {
     void getRuntimeConfig(controller.signal).then((config) => {
       setRuntimeConfig(config);
       setRuntimeConfigError('');
-      if (runtimeRequiresUserApiKey(config) && !hasSessionGeminiApiKey()) {
-        setShowApiKeyDialog(true);
-      }
     }).catch((error) => {
       if (error instanceof Error && error.name === 'AbortError') return;
       setRuntimeConfig(FALLBACK_RUNTIME_CONFIG);
       setRuntimeConfigError('تعذر قراءة إعدادات الخادم. أعد تحميل الصفحة إذا استمرت المشكلة.');
-      if (!hasSessionGeminiApiKey()) setShowApiKeyDialog(true);
     });
     return () => controller.abort();
   }, []);

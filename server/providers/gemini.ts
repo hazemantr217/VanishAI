@@ -15,19 +15,8 @@ export interface GeminiRequestContext {
   referrer?: string;
 }
 
-function createClient(apiKey: string, context?: GeminiRequestContext): GoogleGenAI {
-  return new GoogleGenAI({
-    apiKey,
-    httpOptions: {
-      headers: {
-        // Keep the original AI Studio identity. The optional Referer preserves
-        // compatibility with older AI Studio keys that were browser-restricted
-        // before apps moved to the full-stack server runtime.
-        'User-Agent': 'aistudio-build',
-        ...(context?.referrer ? { Referer: context.referrer } : {}),
-      },
-    },
-  });
+function createClient(apiKey: string, _context?: GeminiRequestContext): GoogleGenAI {
+  return new GoogleGenAI({ apiKey });
 }
 
 export function generateContentConfig(

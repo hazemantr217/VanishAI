@@ -36,19 +36,21 @@ export function isAccessDeniedError(error: unknown): boolean {
     if (status === 403) return true;
   }
   const value = error instanceof Error ? `${error.name} ${error.message}` : String(error);
-  return /(?:permission.?denied|access.?denied|billing|paid tier|not available.*free tier|api key.*referrer)/i.test(value);
+  // Do not match quota errors as 403
+  if (isQuotaError(error)) return false;
+  return /(?:permission.?denied|access.?denied|api key.*referrer)/i.test(value);
 }
 
 export function publicErrorMessage(error: unknown): string {
   if (error instanceof ApiError) return error.message;
   if (isAuthenticationError(error)) {
-    return 'رفض Google مصادقة مفتاح Gemini. حدّث مفتاح AI Studio أو استخدم مفتاحًا صالحًا خارج المنصة.';
-  }
-  if (isAccessDeniedError(error)) {
-    return 'رفض Google الطلب (403). تحقق من صلاحية المفتاح أو قيود مصدره للموديل المختار؛ هذا الخطأ لا يعني الفوترة تلقائيًا.';
+    return 'رفض Google مصادقة مفتاح Gemini. يرجى التحقق من صحة المفتاح.';
   }
   if (isQuotaError(error)) {
-    return 'تم تجاوز حصة الاستخدام أو حد سرعة الطلبات. يرجى الانتظار قليلاً ثم إعادة المحاولة.';
+    return 'تتطلب موديلات توليد وتعديل الصور تفعيل الفوترة (Pay-as-you-go) أو ربط مشروع مفعل في AI Studio لتوفير الحصة.';
+  }
+  if (isAccessDeniedError(error)) {
+    return 'تم رفض الطلب (403). يرجى التحقق من صلاحيات المفتاح والمشروع.';
   }
   return 'فشلت معالجة الصورة. تحقق من المفتاح والموديل ثم أعد المحاولة.';
 }

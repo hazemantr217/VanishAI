@@ -86,10 +86,10 @@ export default function CropModal({ imageUrl, onComplete, onCancel }: CropModalP
           </button>
           <button 
             onClick={handleComplete}
-            className="px-4 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-medium transition-colors flex items-center gap-2"
+            className="px-4 py-2 rounded-xl bg-orange-500 hover:bg-orange-600 text-white font-medium transition-colors flex items-center gap-2"
           >
             <Check className="w-4 h-4" />
-            Apply Crop
+            تطبيق القص
           </button>
         </div>
       </motion.div>

@@ -83,7 +83,7 @@ export default function AppHeader({
       <div className="flex flex-wrap items-center gap-2.5 lg:flex-nowrap">
         {/* 1. Logo & Branding (Right side in RTL) */}
         <div className="flex min-w-fit items-center gap-2" dir="ltr">
-          <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-purple-500 via-violet-600 to-blue-600 shadow-lg shadow-purple-500/20">
+          <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-orange-500 via-amber-500 to-orange-600 shadow-lg shadow-orange-500/20">
             <Sparkles className="h-4.5 w-4.5 text-white" />
           </div>
           <div className="leading-none">
@@ -102,7 +102,7 @@ export default function AppHeader({
               'flex h-9 min-w-[110px] items-center justify-center gap-1.5 rounded-xl px-4 text-[11px] font-black text-white shadow-lg transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-35',
               isProcessing
                 ? 'bg-red-600 shadow-red-500/15'
-                : 'bg-gradient-to-r from-purple-600 to-blue-600 shadow-purple-500/20 ring-1 ring-white/20',
+                : 'bg-gradient-to-r from-orange-500 to-amber-500 shadow-orange-500/20 ring-1 ring-white/20',
             )}
             title={isProcessing ? 'إيقاف الطلبات الحالية' : appMode === 'vanish' ? 'تشغيل الصور التي تحتوي على تحديد' : 'تشغيل الدفعة'}
           >
@@ -117,7 +117,7 @@ export default function AppHeader({
           <select
             value={selectedModel}
             onChange={(event) => onModelChange(event.target.value as ImageModel)}
-            className="h-8 min-w-0 flex-1 rounded-lg border border-transparent bg-neutral-900 px-2 text-[11px] font-bold text-white outline-none transition hover:border-white/10 focus:border-purple-500"
+            className="h-8 min-w-0 flex-1 rounded-lg border border-transparent bg-neutral-900 px-2 text-[11px] font-bold text-white outline-none transition hover:border-white/10 focus:border-orange-500"
             dir="ltr"
           >
             <option value="gemini-3.1-flash-lite-image">🍌 Nano Banana 2 Lite</option>
@@ -133,7 +133,7 @@ export default function AppHeader({
             <select
               value={imageSize}
               onChange={(event) => onImageSizeChange(event.target.value as ImageSize)}
-              className="h-8 rounded-lg border border-white/10 bg-neutral-900 px-2 text-[10px] font-bold text-white outline-none focus:border-purple-500"
+              className="h-8 rounded-lg border border-white/10 bg-neutral-900 px-2 text-[10px] font-bold text-white outline-none focus:border-orange-500"
               title="جودة OpenAI فقط"
             >
               {imageSizesForModel(selectedModel).map((size) => <option key={size} value={size}>{size}</option>)}
@@ -144,17 +144,20 @@ export default function AppHeader({
         {/* Spacer to push Vanish/Batch toggle and tools to the Left in RTL */}
         <div className="hidden flex-1 lg:block" />
 
-        {requiresUserApiKey && (
-          <button
-            type="button"
-            onClick={onManageApiKey}
-            className={cn(secondaryButton, hasUserApiKey ? 'text-emerald-300' : 'border-amber-500/30 text-amber-300')}
-            title="مفتاح Gemini لهذه الجلسة خارج Google AI Studio"
-          >
-            <KeyRound className="h-3.5 w-3.5" />
-            <span className="hidden xl:inline">{hasUserApiKey ? 'المفتاح متصل' : 'أضف المفتاح'}</span>
-          </button>
-        )}
+        <button
+          type="button"
+          onClick={onManageApiKey}
+          className={cn(
+            secondaryButton,
+            hasUserApiKey
+              ? 'border-emerald-500/30 text-emerald-300 bg-emerald-500/10'
+              : 'border-orange-500/30 text-orange-300 hover:bg-orange-500/10',
+          )}
+          title="إعداد أو تحديث مفتاح Gemini API"
+        >
+          <KeyRound className="h-3.5 w-3.5" />
+          <span className="hidden xl:inline">{hasUserApiKey ? 'مفتاح مخصص متصل' : 'مفتاح API'}</span>
+        </button>
 
         {/* 4. Vanish / Batch Mode Toggle (Shifted to Left) */}
         <div className="flex rounded-xl border border-white/10 bg-black/40 p-1">
@@ -163,7 +166,7 @@ export default function AppHeader({
             onClick={() => onModeChange('vanish')}
             className={cn(
               'flex h-8 items-center gap-1.5 rounded-lg px-3 text-[11px] font-bold transition',
-              appMode === 'vanish' ? 'bg-purple-600 text-white shadow-md shadow-purple-500/20' : 'text-neutral-400 hover:text-white',
+              appMode === 'vanish' ? 'bg-orange-500 text-white shadow-md shadow-orange-500/20' : 'text-neutral-400 hover:text-white',
             )}
           >
             <Sparkles className="h-3.5 w-3.5" /> فانيش
@@ -173,7 +176,7 @@ export default function AppHeader({
             onClick={() => onModeChange('reimagine')}
             className={cn(
               'flex h-8 items-center gap-1.5 rounded-lg px-3 text-[11px] font-bold transition',
-              appMode === 'reimagine' ? 'bg-blue-600 text-white shadow-md shadow-blue-500/20' : 'text-neutral-400 hover:text-white',
+              appMode === 'reimagine' ? 'bg-amber-600 text-white shadow-md shadow-amber-500/20' : 'text-neutral-400 hover:text-white',
             )}
           >
             <Images className="h-3.5 w-3.5" /> الباتش
@@ -184,20 +187,20 @@ export default function AppHeader({
         <div className="flex w-full items-center gap-1.5 overflow-x-auto border-t border-white/5 pt-2 lg:w-auto lg:border-0 lg:pt-0">
           <input ref={fileInputRef} type="file" multiple accept="image/png,image/jpeg,image/webp" className="hidden" onChange={onFileUpload} />
           <button type="button" onClick={onDownloadActive} disabled={!hasActiveItem} className={secondaryButton} title="تنزيل الصورة الحالية">
-            <Download className="h-3.5 w-3.5 text-blue-300" /><span className="hidden 2xl:inline">تنزيل</span>
+            <Download className="h-3.5 w-3.5 text-orange-300" /><span className="hidden 2xl:inline">تنزيل</span>
           </button>
           <button type="button" onClick={onDeleteActive} disabled={!hasActiveItem || isProcessing} className={cn(secondaryButton, 'hover:border-red-500/30 hover:text-red-300')} title="حذف الصورة الحالية">
             <Trash2 className="h-3.5 w-3.5" /><span className="hidden 2xl:inline">حذف</span>
           </button>
           {appMode === 'reimagine' && (
-            <button type="button" onClick={onToggleOptions} className={cn(secondaryButton, optionsOpen && 'border-purple-500/30 bg-purple-500/10 text-purple-200')} title="خيارات الباتش">
+            <button type="button" onClick={onToggleOptions} className={cn(secondaryButton, optionsOpen && 'border-orange-500/30 bg-orange-500/10 text-orange-200')} title="خيارات الباتش">
               <Settings2 className="h-3.5 w-3.5" /><span className="hidden xl:inline">الخيارات</span>
             </button>
           )}
-          <button type="button" onClick={onToggleQueue} className={cn(secondaryButton, queueOpen && 'border-purple-500/30 bg-purple-500/10 text-purple-200')} title="قائمة الصور">
+          <button type="button" onClick={onToggleQueue} className={cn(secondaryButton, queueOpen && 'border-orange-500/30 bg-orange-500/10 text-orange-200')} title="قائمة الصور">
             <PanelRight className="h-3.5 w-3.5" /><span>الصور</span><span className="rounded-md bg-black/40 px-1.5 py-0.5 text-[9px]">{itemCount}</span>
           </button>
-          <button type="button" onClick={onToggleArchive} className={cn(secondaryButton, archiveOpen && 'border-purple-500/30 bg-purple-500/10 text-purple-200')} title="الأرشيف والجلسات">
+          <button type="button" onClick={onToggleArchive} className={cn(secondaryButton, archiveOpen && 'border-orange-500/30 bg-orange-500/10 text-orange-200')} title="الأرشيف والجلسات">
             <Archive className="h-3.5 w-3.5" /><span>الأرشيف</span><span className="rounded-md bg-black/40 px-1.5 py-0.5 text-[9px]">{archiveCount}</span>
           </button>
         </div>

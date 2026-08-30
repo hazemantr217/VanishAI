@@ -5,11 +5,13 @@ import { verifyGeminiApiKey } from '../services/api';
 interface ApiKeyDialogProps {
   open: boolean;
   required: boolean;
+  hasSavedKey?: boolean;
   onClose: () => void;
   onSave: (apiKey: string) => void;
+  onForget?: () => void;
 }
 
-export default function ApiKeyDialog({ open, required, onClose, onSave }: ApiKeyDialogProps) {
+export default function ApiKeyDialog({ open, required, hasSavedKey, onClose, onSave, onForget }: ApiKeyDialogProps) {
   const [apiKey, setApiKey] = useState('');
   const [showKey, setShowKey] = useState(false);
   const [isVerifying, setIsVerifying] = useState(false);
@@ -47,10 +49,10 @@ export default function ApiKeyDialog({ open, required, onClose, onSave }: ApiKey
 
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 p-4 backdrop-blur-md" dir="rtl">
-      <div className="w-full max-w-lg rounded-2xl border border-purple-500/25 bg-neutral-950 p-5 shadow-2xl shadow-purple-950/40">
+      <div className="w-full max-w-lg rounded-2xl border border-orange-500/25 bg-neutral-950 p-5 shadow-2xl shadow-orange-950/40">
         <div className="mb-4 flex items-start justify-between gap-4">
           <div className="flex items-start gap-3">
-            <div className="rounded-xl border border-purple-500/25 bg-purple-500/10 p-2.5 text-purple-300">
+            <div className="rounded-xl border border-orange-500/25 bg-orange-500/10 p-2.5 text-orange-300">
               <KeyRound className="h-5 w-5" />
             </div>
             <div>
@@ -82,7 +84,7 @@ export default function ApiKeyDialog({ open, required, onClose, onSave }: ApiKey
             autoComplete="off"
             spellCheck={false}
             placeholder="الصق مفتاح Gemini هنا"
-            className="w-full rounded-xl border border-white/10 bg-black/50 px-3 py-3 pl-11 text-left font-mono text-sm text-white outline-none transition focus:border-purple-500"
+            className="w-full rounded-xl border border-white/10 bg-black/50 px-3 py-3 pl-11 text-left font-mono text-sm text-white outline-none transition focus:border-orange-500"
             dir="ltr"
           />
           <button
@@ -108,19 +110,33 @@ export default function ApiKeyDialog({ open, required, onClose, onSave }: ApiKey
         </div>
 
         <div className="mt-5 flex flex-col-reverse gap-2 sm:flex-row sm:items-center sm:justify-between">
-          <a
-            href="https://aistudio.google.com/app/apikey"
-            target="_blank"
-            rel="noreferrer"
-            className="text-center text-xs font-semibold text-purple-300 hover:text-purple-200"
-          >
-            إنشاء مفتاح من Google AI Studio ↗
-          </a>
+          <div className="flex items-center gap-3">
+            <a
+              href="https://aistudio.google.com/app/apikey"
+              target="_blank"
+              rel="noreferrer"
+              className="text-center text-xs font-semibold text-orange-300 hover:text-orange-200"
+            >
+              إنشاء مفتاح من Google AI Studio ↗
+            </a>
+            {hasSavedKey && onForget && (
+              <button
+                type="button"
+                onClick={() => {
+                  onForget();
+                  onClose();
+                }}
+                className="text-xs font-semibold text-red-400 hover:text-red-300 underline"
+              >
+                إلغاء المفتاح المخصص واستخدام حصة الحساب
+              </button>
+            )}
+          </div>
           <button
             type="button"
             onClick={() => void handleSave()}
             disabled={isVerifying || !apiKey.trim()}
-            className="flex items-center justify-center gap-2 rounded-xl bg-purple-600 px-4 py-2.5 text-xs font-bold text-white transition hover:bg-purple-500 disabled:cursor-not-allowed disabled:opacity-50"
+            className="flex items-center justify-center gap-2 rounded-xl bg-orange-500 px-4 py-2.5 text-xs font-bold text-white transition hover:bg-orange-600 disabled:cursor-not-allowed disabled:opacity-50"
           >
             {isVerifying ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
             {isVerifying ? 'جاري التحقق...' : 'تحقق واستخدم المفتاح'}

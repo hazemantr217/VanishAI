@@ -61,7 +61,7 @@ export default function AspectRatioSelector({ value, onChange, disabled }: Aspec
           className={cn(
             'flex h-10 items-center gap-1.5 rounded-xl border px-3 text-[11px] font-bold transition disabled:opacity-40',
             value === 'original'
-              ? 'border-purple-400/50 bg-purple-500/20 text-purple-100'
+              ? 'border-orange-400/50 bg-orange-500/20 text-orange-100'
               : 'border-white/10 bg-white/5 text-neutral-400 hover:text-white',
           )}
         >
@@ -80,7 +80,7 @@ export default function AspectRatioSelector({ value, onChange, disabled }: Aspec
           aria-label="اكتب نسبة الأبعاد"
           className={cn(
             'h-10 min-w-0 rounded-xl border bg-neutral-950 px-3 text-center font-mono text-sm font-bold text-white outline-none transition placeholder:text-neutral-600 disabled:opacity-40',
-            draft && !supported ? 'border-red-500/50 focus:border-red-400' : 'border-white/10 focus:border-purple-500',
+            draft && !supported ? 'border-red-500/50 focus:border-red-400' : 'border-white/10 focus:border-orange-500',
           )}
           dir="ltr"
         />
@@ -88,7 +88,7 @@ export default function AspectRatioSelector({ value, onChange, disabled }: Aspec
           type="button"
           disabled={disabled || !normalized}
           onClick={reverse}
-          className="flex h-10 w-10 items-center justify-center rounded-xl border border-white/10 bg-white/5 text-neutral-300 transition hover:border-purple-500/40 hover:text-purple-200 disabled:opacity-30"
+          className="flex h-10 w-10 items-center justify-center rounded-xl border border-white/10 bg-white/5 text-neutral-300 transition hover:border-orange-500/40 hover:text-orange-200 disabled:opacity-30"
           title="عكس النسبة"
           aria-label="عكس نسبة الأبعاد"
         >
@@ -98,7 +98,7 @@ export default function AspectRatioSelector({ value, onChange, disabled }: Aspec
           type="button"
           disabled={disabled || !supported}
           onClick={applyDraft}
-          className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-purple-600 to-blue-600 text-white shadow-lg shadow-purple-500/15 transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-30"
+          className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-orange-500 to-amber-600 text-white shadow-lg shadow-orange-500/15 transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-30"
           title="تطبيق النسبة"
           aria-label="تطبيق نسبة الأبعاد"
         >
@@ -110,7 +110,7 @@ export default function AspectRatioSelector({ value, onChange, disabled }: Aspec
           ? 'هذه النسبة غير مدعومة مباشرة. جرّب مثلًا 1:1 أو 3:4 أو 4:3 أو 9:16 أو 16:9.'
           : value === 'original'
             ? 'سيُحافظ على أبعاد الصورة الأصلية.'
-            : <>النسبة المطبقة: <strong dir="ltr" className="text-purple-300">{value}</strong></>}
+            : <>النسبة المطبقة: <strong dir="ltr" className="text-orange-300">{value}</strong></>}
       </p>
     </div>
   );
