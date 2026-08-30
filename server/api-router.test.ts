@@ -88,6 +88,23 @@ test('legacy AI Studio JSON transport does not require a custom request marker',
   });
 });
 
+test('legacy JSON transport still rejects cross-origin browser requests', async () => {
+  await withTestServer(async (baseUrl) => {
+    const response = await fetch(`${baseUrl}/api/inpaint`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        origin: 'https://attacker.example',
+        'sec-fetch-site': 'cross-site',
+      },
+      body: '{}',
+    });
+
+    assert.equal(response.status, 403);
+    assert.equal((await response.json() as { code: string }).code, 'CROSS_SITE_REQUEST');
+  });
+});
+
 test('inpaint validates payloads before calling a provider', async () => {
   await withTestServer(async (baseUrl) => {
     const response = await fetch(`${baseUrl}/api/inpaint`, {

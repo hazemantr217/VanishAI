@@ -7,15 +7,6 @@ function cleanSecret(value: string | undefined): string | null {
   return trimmed ? trimmed : null;
 }
 
-function requestBodyLimit(value: string | undefined): string {
-  const match = /^(\d+)(kb|mb)$/i.exec(value?.trim() || '');
-  if (!match) return '75mb';
-  const amount = Number.parseInt(match[1], 10);
-  const unit = match[2].toLowerCase();
-  if (unit === 'mb') return `${Math.min(100, Math.max(1, amount))}mb`;
-  return `${Math.min(102_400, Math.max(64, amount))}kb`;
-}
-
 export const serverConfig = {
   managedGeminiApiKey: cleanSecret(process.env.GEMINI_API_KEY),
   managedOpenAIApiKey: cleanSecret(process.env.OPENAI_API_KEY),
@@ -24,11 +15,10 @@ export const serverConfig = {
     const parsed = Number(process.env.PORT || 3000);
     return Number.isInteger(parsed) && parsed > 0 && parsed <= 65_535 ? parsed : 3000;
   })(),
-  maxBatchConcurrency: Math.min(
-    4,
-    Math.max(1, Number.parseInt(process.env.MAX_BATCH_CONCURRENCY || '2', 10) || 2),
-  ),
-  requestBodyLimit: requestBodyLimit(process.env.REQUEST_BODY_LIMIT),
+  // Stable built-in limits keep AI Studio from treating optional tuning values
+  // as required secrets. Large batches are queued at this concurrency.
+  maxBatchConcurrency: 2,
+  requestBodyLimit: '75mb',
 };
 
 // AI Studio injects GEMINI_API_KEY automatically. In that managed mode the app

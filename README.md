@@ -55,9 +55,6 @@ Configuration:
 | `GEMINI_API_KEY` | empty | Managed Gemini mode; empty enables BYOK. |
 | `OPENAI_API_KEY` | empty | Enables server-side OpenAI image edits. |
 | `PORT` | `3000` | HTTP port; Cloud Run normally injects `8080`. |
-| `MAX_BATCH_CONCURRENCY` | `2` | Client-advertised batch concurrency, clamped to 1–4. |
-| `API_RATE_LIMIT_MAX` | `40` | API requests per IP in each 10-minute window. |
-| `REQUEST_BODY_LIMIT` | `75mb` | Express JSON limit for metadata and legacy clients; image uploads use bounded multipart files. |
 | `REDIS_URL` | empty | Optional shared rate-limit store for multi-container deployments; single-instance AI Studio needs no extra setting. |
 
 ## Quality and safety checks

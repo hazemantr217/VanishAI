@@ -29,7 +29,7 @@ export async function createApiRateLimiter() {
   const store = serverConfig.redisUrl ? await createRedisRateLimitStore(serverConfig.redisUrl) : undefined;
   return rateLimit({
     windowMs: 10 * 60 * 1000,
-    limit: Math.max(5, Number.parseInt(process.env.API_RATE_LIMIT_MAX || '40', 10) || 40),
+    limit: 40,
     skip: (request) => request.method === 'GET' || request.method === 'HEAD' || request.method === 'OPTIONS',
     standardHeaders: 'draft-8',
     legacyHeaders: false,
@@ -59,22 +59,6 @@ export function enforceSameOrigin(req: Request, res: Response, next: NextFunctio
     return;
   }
 
-  // AI Studio's original working transport posts JSON through its preview
-  // proxy. JSON is already protected from cross-site form submissions by the
-  // browser's CORS preflight, so it does not need our custom request marker.
-  if (req.is('application/json')) {
-    next();
-    return;
-  }
-
-  if (req.header('x-vanish-request') !== '1') {
-    res.status(403).json({
-      error: 'تحقق الطلب الأمني مفقود.',
-      code: 'REQUEST_MARKER_REQUIRED',
-    });
-    return;
-  }
-
   const fetchSite = req.header('sec-fetch-site');
   if (fetchSite === 'cross-site') {
     res.status(403).json({
@@ -85,29 +69,41 @@ export function enforceSameOrigin(req: Request, res: Response, next: NextFunctio
   }
 
   const origin = req.header('origin');
-  if (!origin) {
+  if (origin) {
+    try {
+      const originHost = new URL(origin).host;
+      const forwardedHosts = (req.header('x-forwarded-host') || '')
+        .split(',')
+        .map((host) => host.trim())
+        .filter(Boolean);
+      const expectedHosts = new Set([req.get('host'), req.hostname, ...forwardedHosts].filter(Boolean));
+      if (originHost && !expectedHosts.has(originHost)) {
+        res.status(403).json({
+          error: 'تم رفض طلب من مصدر مختلف.',
+          code: 'CROSS_ORIGIN_REQUEST',
+        });
+        return;
+      }
+    } catch {
+      res.status(403).json({
+        error: 'قيمة Origin غير صالحة.',
+        code: 'INVALID_ORIGIN',
+      });
+      return;
+    }
+  }
+
+  // The AI Studio preview proxy uses JSON without the custom marker. It is
+  // allowed only after the browser source and Origin checks above have passed.
+  if (req.is('application/json')) {
     next();
     return;
   }
 
-  try {
-    const originHost = new URL(origin).host;
-    const forwardedHosts = (req.header('x-forwarded-host') || '')
-      .split(',')
-      .map((host) => host.trim())
-      .filter(Boolean);
-    const expectedHosts = new Set([req.get('host'), req.hostname, ...forwardedHosts].filter(Boolean));
-    if (originHost && !expectedHosts.has(originHost)) {
-      res.status(403).json({
-        error: 'تم رفض طلب من مصدر مختلف.',
-        code: 'CROSS_ORIGIN_REQUEST',
-      });
-      return;
-    }
-  } catch {
+  if (req.header('x-vanish-request') !== '1') {
     res.status(403).json({
-      error: 'قيمة Origin غير صالحة.',
-      code: 'INVALID_ORIGIN',
+      error: 'تحقق الطلب الأمني مفقود.',
+      code: 'REQUEST_MARKER_REQUIRED',
     });
     return;
   }
