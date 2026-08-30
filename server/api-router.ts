@@ -184,13 +184,13 @@ apiRouter.use((error: unknown, _req: Request, res: Response, _next: NextFunction
         ? 'QUOTA_EXCEEDED'
         : 'PROCESSING_FAILED';
 
-  if (status >= 500) {
+  if (!(error instanceof ApiError)) {
     const details = typeof error === 'object' && error !== null ? {
       name: error instanceof Error ? error.name : 'UnknownError',
       providerStatus: 'status' in error ? Number(error.status) || undefined : undefined,
       providerCode: 'code' in error && typeof error.code === 'string' ? error.code : undefined,
     } : { name: typeof error };
-    console.error(`[${requestId || 'unknown'}] Image API request failed`, details);
+    console.error(`[${requestId || 'unknown'}] Image provider request failed`, details);
   }
 
   res.status(status).json({

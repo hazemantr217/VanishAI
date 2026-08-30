@@ -131,6 +131,23 @@ test('legacy JSON transport still rejects cross-origin browser requests', async 
   });
 });
 
+test('Google AI Studio preview JSON passes the origin guard through its proxy', async () => {
+  await withTestServer(async (baseUrl) => {
+    const response = await fetch(`${baseUrl}/api/inpaint`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        origin: 'https://preview-session-123.scf.usercontent.goog',
+        'sec-fetch-site': 'cross-site',
+      },
+      body: '{}',
+    });
+
+    assert.equal(response.status, 400);
+    assert.equal((await response.json() as { code: string }).code, 'INVALID_REQUEST');
+  });
+});
+
 test('inpaint validates payloads before calling a provider', async () => {
   await withTestServer(async (baseUrl) => {
     const response = await fetch(`${baseUrl}/api/inpaint`, {

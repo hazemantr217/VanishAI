@@ -51,6 +51,14 @@ async function parseApiError(response: Response): Promise<Error> {
     // Fall back to the status text without exposing an HTML error response.
   }
 
+  if (response.status === 403 && !payload?.error && !response.headers.get('x-request-id')) {
+    const proxyError = new Error(
+      'حجب Google AI Studio Preview الطلب قبل وصوله إلى خادم التطبيق. أعد تشغيل Preview ثم أعد المحاولة.',
+    );
+    proxyError.name = 'AI_STUDIO_PROXY_FORBIDDEN';
+    return proxyError;
+  }
+
   const error = new Error(payload?.error || `فشل الطلب (${response.status}).`);
   error.name = payload?.code || 'API_ERROR';
   return error;

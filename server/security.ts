@@ -5,6 +5,21 @@ import { RedisStore, type RedisReply } from 'rate-limit-redis';
 import { createClient } from 'redis';
 import { serverConfig } from './config';
 
+const AI_STUDIO_PREVIEW_SUFFIX = '.scf.usercontent.goog';
+
+export function isGoogleAIStudioPreviewOrigin(value: string | undefined): boolean {
+  if (!value) return false;
+  try {
+    const url = new URL(value);
+    return url.protocol === 'https:' &&
+      !url.port &&
+      url.hostname.length > AI_STUDIO_PREVIEW_SUFFIX.length &&
+      url.hostname.endsWith(AI_STUDIO_PREVIEW_SUFFIX);
+  } catch {
+    return false;
+  }
+}
+
 export const securityHeaders = helmet({
   contentSecurityPolicy: process.env.NODE_ENV === 'production' ? {
     directives: {
@@ -59,8 +74,10 @@ export function enforceSameOrigin(req: Request, res: Response, next: NextFunctio
     return;
   }
 
+  const origin = req.header('origin');
+  const isAIStudioPreview = isGoogleAIStudioPreviewOrigin(origin);
   const fetchSite = req.header('sec-fetch-site');
-  if (fetchSite === 'cross-site') {
+  if (fetchSite === 'cross-site' && !isAIStudioPreview) {
     res.status(403).json({
       error: 'تم رفض طلب من مصدر خارجي.',
       code: 'CROSS_SITE_REQUEST',
@@ -68,7 +85,6 @@ export function enforceSameOrigin(req: Request, res: Response, next: NextFunctio
     return;
   }
 
-  const origin = req.header('origin');
   if (origin) {
     try {
       const originHost = new URL(origin).host;
@@ -77,7 +93,7 @@ export function enforceSameOrigin(req: Request, res: Response, next: NextFunctio
         .map((host) => host.trim())
         .filter(Boolean);
       const expectedHosts = new Set([req.get('host'), req.hostname, ...forwardedHosts].filter(Boolean));
-      if (originHost && !expectedHosts.has(originHost)) {
+      if (originHost && !expectedHosts.has(originHost) && !isAIStudioPreview) {
         res.status(403).json({
           error: 'تم رفض طلب من مصدر مختلف.',
           code: 'CROSS_ORIGIN_REQUEST',
