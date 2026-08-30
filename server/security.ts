@@ -5,45 +5,44 @@ import { RedisStore, type RedisReply } from 'rate-limit-redis';
 import { createClient } from 'redis';
 import { serverConfig } from './config';
 
+const AI_STUDIO_PREVIEW_SUFFIX = '.scf.usercontent.goog';
+const AI_STUDIO_ORIGINS = new Set([
+  'https://aistudio.google.com',
+  'https://ai.studio',
+]);
+
 export function isGoogleAIStudioPreviewOrigin(value: string | undefined): boolean {
-  if (!value || value === 'null') return true;
+  if (!value) return false;
   try {
     const url = new URL(value);
-    if (!['http:', 'https:'].includes(url.protocol)) return false;
-    const hostname = url.hostname.toLowerCase();
-    return (
-      hostname === 'localhost' ||
-      hostname === '127.0.0.1' ||
-      hostname === 'ai.studio' ||
-      hostname.endsWith('.ai.studio') ||
-      hostname.endsWith('.google.com') ||
-      hostname.endsWith('.run.app') ||
-      hostname.endsWith('.usercontent.goog')
-    );
+    if (url.protocol !== 'https:' || url.port || url.username || url.password) return false;
+    if (AI_STUDIO_ORIGINS.has(url.origin)) return true;
+    return url.hostname.length > AI_STUDIO_PREVIEW_SUFFIX.length &&
+      url.hostname.endsWith(AI_STUDIO_PREVIEW_SUFFIX);
   } catch {
     return false;
   }
 }
 
 export const securityHeaders = helmet({
-  contentSecurityPolicy: false,
+  contentSecurityPolicy: process.env.NODE_ENV === 'production' ? {
+    directives: {
+      defaultSrc: ["'self'"],
+      baseUri: ["'self'"],
+      connectSrc: ["'self'"],
+      fontSrc: ["'self'", 'data:'],
+      formAction: ["'self'"],
+      frameAncestors: ["'self'", 'https://aistudio.google.com', 'https://ai.studio'],
+      imgSrc: ["'self'", 'data:', 'blob:'],
+      objectSrc: ["'none'"],
+      scriptSrc: ["'self'"],
+      styleSrc: ["'self'", "'unsafe-inline'"],
+      workerSrc: ["'self'", 'blob:'],
+    },
+  } : false,
   crossOriginEmbedderPolicy: false,
-  crossOriginResourcePolicy: false,
-  frameguard: false,
+  crossOriginResourcePolicy: { policy: 'same-site' },
 });
-
-export function corsMiddleware(req: Request, res: Response, next: NextFunction): void {
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Gemini-Api-Key, X-OpenAI-Api-Key, X-Request-Id, X-Vanish-Request, Accept');
-  res.setHeader('Access-Control-Expose-Headers', 'X-Request-Id, Retry-After');
-
-  if (req.method === 'OPTIONS') {
-    res.sendStatus(204);
-    return;
-  }
-  next();
-}
 
 export async function createApiRateLimiter() {
   const store = serverConfig.redisUrl ? await createRedisRateLimitStore(serverConfig.redisUrl) : undefined;
@@ -73,7 +72,61 @@ async function createRedisRateLimitStore(redisUrl: string): Promise<RedisStore> 
   });
 }
 
-export function enforceSameOrigin(_req: Request, _res: Response, next: NextFunction): void {
-  // Allow all same-origin, preview iframe, and direct app requests seamlessly
+export function enforceSameOrigin(req: Request, res: Response, next: NextFunction): void {
+  if (req.method === 'GET' || req.method === 'HEAD' || req.method === 'OPTIONS') {
+    next();
+    return;
+  }
+
+  const origin = req.header('origin');
+  const isAIStudioPreview = isGoogleAIStudioPreviewOrigin(origin);
+  const fetchSite = req.header('sec-fetch-site');
+  if (fetchSite === 'cross-site' && !isAIStudioPreview) {
+    res.status(403).json({
+      error: 'تم رفض طلب من مصدر خارجي.',
+      code: 'CROSS_SITE_REQUEST',
+    });
+    return;
+  }
+
+  if (origin) {
+    try {
+      const originHost = new URL(origin).host;
+      const forwardedHosts = (req.header('x-forwarded-host') || '')
+        .split(',')
+        .map((host) => host.trim())
+        .filter(Boolean);
+      const expectedHosts = new Set([req.get('host'), req.hostname, ...forwardedHosts].filter(Boolean));
+      if (originHost && !expectedHosts.has(originHost) && !isAIStudioPreview) {
+        res.status(403).json({
+          error: 'تم رفض طلب من مصدر مختلف.',
+          code: 'CROSS_ORIGIN_REQUEST',
+        });
+        return;
+      }
+    } catch {
+      res.status(403).json({
+        error: 'قيمة Origin غير صالحة.',
+        code: 'INVALID_ORIGIN',
+      });
+      return;
+    }
+  }
+
+  // AI Studio's preview proxy sends the legacy JSON transport without the
+  // custom marker. It is accepted only after the source checks above pass.
+  if (req.is('application/json')) {
+    next();
+    return;
+  }
+
+  if (req.header('x-vanish-request') !== '1') {
+    res.status(403).json({
+      error: 'تحقق الطلب الأمني مفقود.',
+      code: 'REQUEST_MARKER_REQUIRED',
+    });
+    return;
+  }
+
   next();
 }

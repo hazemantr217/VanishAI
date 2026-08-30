@@ -1,25 +1,15 @@
 import 'dotenv/config';
 import express from 'express';
-import { randomUUID } from 'node:crypto';
 import path from 'node:path';
 import { apiRouter } from './server/api-router';
 import { serverConfig } from './server/config';
 import { apiMiddlewareErrorHandler } from './server/http-error-handler';
-import { corsMiddleware, createApiRateLimiter, enforceSameOrigin, securityHeaders } from './server/security';
+import { createApiRateLimiter, enforceSameOrigin, securityHeaders } from './server/security';
 
 export async function createApp() {
   const app = express();
   app.disable('x-powered-by');
   app.set('trust proxy', 1);
-
-  app.use(corsMiddleware);
-
-  app.use((req, res, next) => {
-    const requestId = req.header('x-request-id') || randomUUID();
-    res.locals.requestId = requestId;
-    res.setHeader('X-Request-Id', requestId);
-    next();
-  });
 
   app.use(securityHeaders);
 

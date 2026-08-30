@@ -81,3 +81,43 @@ test('distinguishes an AI Studio proxy 403 from a Gemini provider denial', async
     globalThis.fetch = originalFetch;
   }
 });
+
+test('preserves a structured Gemini provider 403 response', async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (input) => {
+    if (String(input) === '/api/inpaint') {
+      return new Response(JSON.stringify({
+        error: 'رفض Google الطلب (403).',
+        code: 'MODEL_ACCESS_DENIED',
+        requestId: 'provider-request',
+      }), {
+        status: 403,
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Request-Id': 'provider-request',
+        },
+      });
+    }
+    return originalFetch(input);
+  };
+
+  try {
+    await assert.rejects(
+      requestInpaint({
+        originalImage: TEST_IMAGE,
+        maskedImage: TEST_IMAGE,
+        prompt: 'Improve it',
+        model: 'gemini-3.1-flash-image',
+        appMode: 'reimagine',
+        aspectRatio: 'original',
+        imageSize: '1K',
+        similarityLevel: 'high',
+      }),
+      (error: unknown) => error instanceof Error &&
+        error.name === 'MODEL_ACCESS_DENIED' &&
+        /Google/.test(error.message),
+    );
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});

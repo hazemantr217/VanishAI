@@ -15,8 +15,16 @@ export interface GeminiRequestContext {
   referrer?: string;
 }
 
-function createClient(apiKey: string, _context?: GeminiRequestContext): GoogleGenAI {
-  return new GoogleGenAI({ apiKey });
+function createClient(apiKey: string, context?: GeminiRequestContext): GoogleGenAI {
+  return new GoogleGenAI({
+    apiKey,
+    httpOptions: {
+      headers: {
+        'User-Agent': 'aistudio-build',
+        ...(context?.referrer ? { Referer: context.referrer } : {}),
+      },
+    },
+  });
 }
 
 export function generateContentConfig(

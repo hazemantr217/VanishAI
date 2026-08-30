@@ -44,13 +44,13 @@ export function isAccessDeniedError(error: unknown): boolean {
 export function publicErrorMessage(error: unknown): string {
   if (error instanceof ApiError) return error.message;
   if (isAuthenticationError(error)) {
-    return 'رفض Google مصادقة مفتاح Gemini. يرجى التحقق من صحة المفتاح.';
+    return 'رفض Google مصادقة مفتاح Gemini. حدّث مفتاح AI Studio أو استخدم مفتاحًا صالحًا خارج المنصة.';
   }
   if (isQuotaError(error)) {
-    return 'تتطلب موديلات توليد وتعديل الصور تفعيل الفوترة (Pay-as-you-go) أو ربط مشروع مفعل في AI Studio لتوفير الحصة.';
+    return 'تم تجاوز حصة الاستخدام أو حد سرعة الطلبات. انتظر قليلًا ثم أعد المحاولة.';
   }
   if (isAccessDeniedError(error)) {
-    return 'تم رفض الطلب (403). يرجى التحقق من صلاحيات المفتاح والمشروع.';
+    return 'رفض Google الطلب (403). تحقق من صلاحية المفتاح أو قيود مصدره للموديل المختار؛ هذا الخطأ لا يعني الفوترة تلقائيًا.';
   }
   return 'فشلت معالجة الصورة. تحقق من المفتاح والموديل ثم أعد المحاولة.';
 }

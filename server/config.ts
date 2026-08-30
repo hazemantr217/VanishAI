@@ -47,7 +47,7 @@ function readSecretHeader(req: Request, headerName: string): string | null {
 }
 
 export function resolveGeminiApiKey(req: Request): string | null {
-  return readSecretHeader(req, 'x-gemini-api-key') || serverConfig.managedGeminiApiKey;
+  return serverConfig.managedGeminiApiKey || readSecretHeader(req, 'x-gemini-api-key');
 }
 
 export function resolveOpenAIApiKey(req: Request): string | null {
