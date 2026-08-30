@@ -2,14 +2,14 @@ import { GoogleGenAI } from '@google/genai';
 import type { z } from 'zod';
 import type { inpaintRequestSchema, mergeBatchRequestSchema } from '../validation';
 import { buildImageEditPrompt, buildMergePrompt } from '../prompts';
-import { extractInteractionImage, parseImageDataUrl } from '../image-data';
+import { extractGenerateContentImage, parseImageDataUrl } from '../image-data';
 
 type InpaintInput = z.infer<typeof inpaintRequestSchema>;
 type MergeInput = z.infer<typeof mergeBatchRequestSchema>;
 
-type InteractionInputBlock =
-  | { type: 'image'; data: string; mime_type: 'image/png' | 'image/jpeg' | 'image/webp' }
-  | { type: 'text'; text: string };
+type GenerateContentPart =
+  | { inlineData: { data: string; mimeType: 'image/png' | 'image/jpeg' | 'image/webp' } }
+  | { text: string };
 
 function createClient(apiKey: string): GoogleGenAI {
   return new GoogleGenAI({
@@ -22,24 +22,26 @@ function createClient(apiKey: string): GoogleGenAI {
   });
 }
 
-export function imageResponseFormat(input: { aspectRatio: string; imageSize: string }) {
-  return {
-    type: 'image' as const,
-    mime_type: 'image/png',
-    ...(input.aspectRatio === 'original' ? {} : { aspect_ratio: input.aspectRatio }),
-    image_size: input.imageSize,
-  };
-}
-
-export function imageInteractionRequest(
-  model: string,
-  input: InteractionInputBlock[],
-  output: { aspectRatio: string; imageSize: string },
+export function generateContentConfig(
+  input: Pick<InpaintInput, 'aspectRatio' | 'imageSize' | 'similarityLevel'>,
+  signal?: AbortSignal,
 ) {
+  const imageConfig = {
+    ...(input.aspectRatio === 'original' ? {} : { aspectRatio: input.aspectRatio }),
+    // 1K is Gemini's default. Omitting it preserves the exact request shape
+    // used by the original AI Studio implementation and keeps Lite compatible.
+    ...(input.imageSize === '1K' ? {} : { imageSize: input.imageSize }),
+  };
+  const temperature = input.similarityLevel === 'high'
+    ? 0.15
+    : input.similarityLevel === 'medium'
+      ? 0.5
+      : 1;
+
   return {
-    model,
-    input,
-    response_format: imageResponseFormat(output),
+    ...(signal ? { abortSignal: signal } : {}),
+    temperature,
+    ...(Object.keys(imageConfig).length > 0 ? { imageConfig } : {}),
   };
 }
 
@@ -53,28 +55,31 @@ export async function editWithGemini(
   const masked = parseImageDataUrl(input.maskedImage);
   const hasSeparateMaskReference = input.maskedImage !== input.originalImage;
 
-  const interactionInput = [
+  const parts: GenerateContentPart[] = [
     {
-      type: 'image' as const,
-      data: original.base64,
-      mime_type: original.mimeType,
+      inlineData: {
+        data: original.base64,
+        mimeType: original.mimeType,
+      },
     },
     ...(hasSeparateMaskReference
       ? [{
-          type: 'image' as const,
-          data: masked.base64,
-          mime_type: masked.mimeType,
+          inlineData: {
+            data: masked.base64,
+            mimeType: masked.mimeType,
+          },
         }]
       : []),
-    { type: 'text' as const, text: buildImageEditPrompt(input) },
+    { text: buildImageEditPrompt(input) },
   ];
 
-  const interaction = await ai.interactions.create(
-    imageInteractionRequest(input.model, interactionInput, input),
-    { signal },
-  );
+  const response = await ai.models.generateContent({
+    model: input.model,
+    contents: { parts },
+    config: generateContentConfig(input, signal),
+  });
 
-  return extractInteractionImage(interaction);
+  return extractGenerateContentImage(response);
 }
 
 export async function mergeWithGemini(
@@ -83,23 +88,25 @@ export async function mergeWithGemini(
   signal: AbortSignal,
 ): Promise<string> {
   const ai = createClient(apiKey);
-  const interactionInput: InteractionInputBlock[] = input.images.map((image) => {
+  const parts: GenerateContentPart[] = input.images.map((image) => {
     const parsed = parseImageDataUrl(image);
     return {
-      type: 'image',
-      data: parsed.base64,
-      mime_type: parsed.mimeType,
+      inlineData: {
+        data: parsed.base64,
+        mimeType: parsed.mimeType,
+      },
     };
   });
 
-  interactionInput.push({ type: 'text', text: buildMergePrompt(input) });
+  parts.push({ text: buildMergePrompt(input) });
 
-  const interaction = await ai.interactions.create(
-    imageInteractionRequest(input.model, interactionInput, input),
-    { signal },
-  );
+  const response = await ai.models.generateContent({
+    model: input.model,
+    contents: { parts },
+    config: generateContentConfig(input, signal),
+  });
 
-  return extractInteractionImage(interaction);
+  return extractGenerateContentImage(response);
 }
 
 export async function verifyGeminiKey(apiKey: string, signal: AbortSignal): Promise<void> {

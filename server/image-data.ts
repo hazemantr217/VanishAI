@@ -33,12 +33,24 @@ export function imageFileExtension(mimeType: string): string {
   return 'png';
 }
 
-export function extractInteractionImage(interaction: {
-  output_image?: { data?: string; mime_type?: string };
+export function extractGenerateContentImage(response: {
+  candidates?: Array<{
+    content?: {
+      parts?: Array<{
+        inlineData?: { data?: string; mimeType?: string };
+      }>;
+    };
+  }>;
 }): string {
-  const image = interaction.output_image;
+  let image: { data?: string; mimeType?: string } | undefined;
+  for (const candidate of response.candidates || []) {
+    for (const part of candidate.content?.parts || []) {
+      if (part.inlineData?.data) image = part.inlineData;
+    }
+  }
+
   if (!image?.data) {
     throw new ApiError(422, 'لم يُرجع الموديل صورة صالحة.', 'NO_IMAGE_RESULT');
   }
-  return `data:${image.mime_type || 'image/png'};base64,${image.data}`;
+  return `data:${image.mimeType || 'image/png'};base64,${image.data}`;
 }
