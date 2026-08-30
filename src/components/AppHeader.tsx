@@ -144,6 +144,18 @@ export default function AppHeader({
         {/* Spacer to push Vanish/Batch toggle and tools to the Left in RTL */}
         <div className="hidden flex-1 lg:block" />
 
+        {requiresUserApiKey && (
+          <button
+            type="button"
+            onClick={onManageApiKey}
+            className={cn(secondaryButton, hasUserApiKey ? 'text-emerald-300' : 'border-amber-500/30 text-amber-300')}
+            title="مفتاح Gemini لهذه الجلسة خارج Google AI Studio"
+          >
+            <KeyRound className="h-3.5 w-3.5" />
+            <span className="hidden xl:inline">{hasUserApiKey ? 'المفتاح متصل' : 'أضف المفتاح'}</span>
+          </button>
+        )}
+
         {/* 4. Vanish / Batch Mode Toggle (Shifted to Left) */}
         <div className="flex rounded-xl border border-white/10 bg-black/40 p-1">
           <button

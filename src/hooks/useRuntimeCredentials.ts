@@ -8,11 +8,15 @@ import {
 } from '../services/api';
 
 const FALLBACK_RUNTIME_CONFIG: RuntimeConfig = {
-  geminiCredentialMode: 'managed',
-  googleOnlyMode: true,
+  geminiCredentialMode: 'byok',
+  googleOnlyMode: false,
   openaiAvailable: false,
   maxBatchConcurrency: 2,
 };
+
+export function runtimeRequiresUserApiKey(config: RuntimeConfig | null): boolean {
+  return config?.geminiCredentialMode === 'byok';
+}
 
 export function useRuntimeCredentials() {
   const [runtimeConfig, setRuntimeConfig] = useState<RuntimeConfig | null>(null);
@@ -25,18 +29,27 @@ export function useRuntimeCredentials() {
     void getRuntimeConfig(controller.signal).then((config) => {
       setRuntimeConfig(config);
       setRuntimeConfigError('');
+      if (runtimeRequiresUserApiKey(config) && !hasSessionGeminiApiKey()) {
+        setShowApiKeyDialog(true);
+      }
     }).catch((error) => {
       if (error instanceof Error && error.name === 'AbortError') return;
       setRuntimeConfig(FALLBACK_RUNTIME_CONFIG);
+      setRuntimeConfigError('تعذر قراءة إعدادات الخادم. أعد تحميل الصفحة إذا استمرت المشكلة.');
+      if (!hasSessionGeminiApiKey()) setShowApiKeyDialog(true);
     });
     return () => controller.abort();
   }, []);
 
-  const requiresUserApiKey = runtimeConfig?.geminiCredentialMode === 'byok' && !runtimeConfig.googleOnlyMode;
+  const requiresUserApiKey = runtimeRequiresUserApiKey(runtimeConfig);
 
   const ensureCredentials = useCallback(() => {
+    if (requiresUserApiKey && !hasSessionGeminiApiKey()) {
+      setShowApiKeyDialog(true);
+      return false;
+    }
     return true;
-  }, []);
+  }, [requiresUserApiKey]);
 
   const handleSaveApiKey = useCallback((apiKey: string) => {
     setSessionGeminiApiKey(apiKey);

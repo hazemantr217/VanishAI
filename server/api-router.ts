@@ -5,12 +5,41 @@ import { serverConfig, isGoogleManagedRuntime, isOpenAIEnabled, resolveGeminiApi
 import { ApiError, isAbortError, isAccessDeniedError, isAuthenticationError, isQuotaError, publicErrorMessage } from './errors';
 import { createRequestAbortController } from './request-abort';
 import { inpaintRequestSchema, mergeBatchRequestSchema } from './validation';
-import { editWithGemini, mergeWithGemini, verifyGeminiKey } from './providers/gemini';
+import {
+  editWithGemini,
+  mergeWithGemini,
+  verifyGeminiKey,
+  type GeminiRequestContext,
+} from './providers/gemini';
 import { editWithOpenAI } from './providers/openai';
 import { inpaintBody, inpaintUploadMiddleware, mergeBody, mergeUploadMiddleware } from './multipart';
 import { isGeminiModel, isOpenAIModel } from '../src/shared/models';
 
 export const apiRouter = express.Router();
+
+export function geminiRequestContext(req: Request): GeminiRequestContext {
+  const forwardedHost = req.header('x-forwarded-host')?.split(',')[0]?.trim();
+  const candidates = [
+    req.header('referer'),
+    req.header('origin'),
+    forwardedHost ? `https://${forwardedHost}/` : undefined,
+  ];
+
+  for (const candidate of candidates) {
+    if (!candidate || candidate.length > 2_048 || /[\r\n]/.test(candidate)) continue;
+    try {
+      const url = new URL(candidate);
+      if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password) continue;
+      url.search = '';
+      url.hash = '';
+      return { referrer: url.toString() };
+    } catch {
+      // Try the next trusted request-derived candidate.
+    }
+  }
+
+  return {};
+}
 
 apiRouter.use((_req, res, next) => {
   const requestId = randomUUID();
@@ -42,7 +71,7 @@ apiRouter.post('/credentials/verify', async (req, res, next) => {
 
   const requestAbort = createRequestAbortController(req, res);
   try {
-    await verifyGeminiKey(apiKey, requestAbort.signal);
+    await verifyGeminiKey(apiKey, requestAbort.signal, geminiRequestContext(req));
     if (!res.writableEnded) res.json({ valid: true });
   } catch (error) {
     next(error);
@@ -62,7 +91,7 @@ apiRouter.post('/inpaint', inpaintUploadMiddleware, async (req, res, next) => {
       if (!apiKey) {
         throw new ApiError(401, 'أدخل مفتاح Gemini API للمتابعة.', 'API_KEY_REQUIRED');
       }
-      resultImage = await editWithGemini(apiKey, input, requestAbort.signal);
+      resultImage = await editWithGemini(apiKey, input, requestAbort.signal, geminiRequestContext(req));
     } else if (isOpenAIModel(input.model)) {
       if (!isOpenAIEnabled()) {
         throw new ApiError(400, 'موديلات OpenAI معطلة في وضع Google AI Studio.', 'OPENAI_DISABLED');
@@ -99,7 +128,7 @@ apiRouter.post('/merge-batch', mergeUploadMiddleware, async (req, res, next) => 
       throw new ApiError(401, 'أدخل مفتاح Gemini API للمتابعة.', 'API_KEY_REQUIRED');
     }
 
-    const resultImage = await mergeWithGemini(apiKey, input, requestAbort.signal);
+    const resultImage = await mergeWithGemini(apiKey, input, requestAbort.signal, geminiRequestContext(req));
     if (!res.writableEnded) {
       res.json({ resultImage, requestId: res.locals.requestId });
     }

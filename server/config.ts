@@ -8,8 +8,15 @@ function cleanSecret(value: string | undefined): string | null {
 }
 
 export const serverConfig = {
-  managedGeminiApiKey: cleanSecret(process.env.GEMINI_API_KEY),
-  managedOpenAIApiKey: cleanSecret(process.env.OPENAI_API_KEY),
+  // Use getters instead of startup snapshots. AI Studio can refresh managed
+  // secrets while its preview server is being rebuilt, and the next request
+  // must see the current value without relying on module re-evaluation.
+  get managedGeminiApiKey(): string | null {
+    return cleanSecret(process.env.GEMINI_API_KEY);
+  },
+  get managedOpenAIApiKey(): string | null {
+    return cleanSecret(process.env.OPENAI_API_KEY);
+  },
   redisUrl: cleanSecret(process.env.REDIS_URL),
   port: (() => {
     const parsed = Number(process.env.PORT || 3000);

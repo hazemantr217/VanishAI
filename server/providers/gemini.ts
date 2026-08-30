@@ -11,12 +11,20 @@ type GenerateContentPart =
   | { inlineData: { data: string; mimeType: 'image/png' | 'image/jpeg' | 'image/webp' } }
   | { text: string };
 
-function createClient(apiKey: string): GoogleGenAI {
+export interface GeminiRequestContext {
+  referrer?: string;
+}
+
+function createClient(apiKey: string, context?: GeminiRequestContext): GoogleGenAI {
   return new GoogleGenAI({
     apiKey,
     httpOptions: {
       headers: {
+        // Keep the original AI Studio identity. The optional Referer preserves
+        // compatibility with older AI Studio keys that were browser-restricted
+        // before apps moved to the full-stack server runtime.
         'User-Agent': 'aistudio-build',
+        ...(context?.referrer ? { Referer: context.referrer } : {}),
       },
     },
   });
@@ -32,18 +40,12 @@ export function generateContentConfig(
       ? 0.5
       : 1;
 
-  let imageConfig: { aspectRatio?: string } | undefined = undefined;
-  if (input.aspectRatio && input.aspectRatio !== 'original') {
-    const validRatios = ['1:1', '3:4', '4:3', '9:16', '16:9', '1:4', '1:8', '4:1', '8:1'];
-    if (validRatios.includes(input.aspectRatio)) {
-      imageConfig = { aspectRatio: input.aspectRatio };
-    }
-  }
-
   return {
     ...(signal ? { abortSignal: signal } : {}),
     temperature,
-    ...(imageConfig ? { imageConfig } : {}),
+    ...(input.aspectRatio === 'original'
+      ? {}
+      : { imageConfig: { aspectRatio: input.aspectRatio } }),
   };
 }
 
@@ -51,8 +53,9 @@ export async function editWithGemini(
   apiKey: string,
   input: InpaintInput,
   signal: AbortSignal,
+  context?: GeminiRequestContext,
 ): Promise<string> {
-  const ai = createClient(apiKey);
+  const ai = createClient(apiKey, context);
   const masked = parseImageDataUrl(input.maskedImage);
 
   const parts: GenerateContentPart[] = [
@@ -67,7 +70,9 @@ export async function editWithGemini(
 
   const response = await ai.models.generateContent({
     model: input.model,
-    contents: parts,
+    // This is the exact content envelope used by the original working AI
+    // Studio version. Keep the image and prompt in one user Content object.
+    contents: { parts },
     config: generateContentConfig(input, signal),
   });
 
@@ -78,8 +83,9 @@ export async function mergeWithGemini(
   apiKey: string,
   input: MergeInput,
   signal: AbortSignal,
+  context?: GeminiRequestContext,
 ): Promise<string> {
-  const ai = createClient(apiKey);
+  const ai = createClient(apiKey, context);
   const parts: GenerateContentPart[] = input.images.map((image) => {
     const parsed = parseImageDataUrl(image);
     return {
@@ -94,15 +100,19 @@ export async function mergeWithGemini(
 
   const response = await ai.models.generateContent({
     model: input.model,
-    contents: parts,
+    contents: { parts },
     config: generateContentConfig(input, signal),
   });
 
   return extractGenerateContentImage(response);
 }
 
-export async function verifyGeminiKey(apiKey: string, signal: AbortSignal): Promise<void> {
-  const ai = createClient(apiKey);
+export async function verifyGeminiKey(
+  apiKey: string,
+  signal: AbortSignal,
+  context?: GeminiRequestContext,
+): Promise<void> {
+  const ai = createClient(apiKey, context);
   await ai.models.get({
     model: 'gemini-3.1-flash-lite-image',
     config: { abortSignal: signal },

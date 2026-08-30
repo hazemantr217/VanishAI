@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import type { AddressInfo } from 'node:net';
 import test from 'node:test';
 import { createApp } from '../server';
+import { geminiRequestContext } from './api-router';
 
 async function withTestServer(run: (baseUrl: string) => Promise<void>) {
   const app = await createApp();
@@ -36,6 +37,31 @@ test('health and runtime config expose no credentials', async () => {
     assert.equal(typeof config.maxBatchConcurrency, 'number');
     assert.equal(JSON.stringify(config).includes('API_KEY'), false);
   });
+});
+
+test('AI Studio request context forwards only a sanitized HTTP referrer', () => {
+  const request = {
+    header(name: string) {
+      if (name === 'referer') return 'https://preview.example/workspace?token=private#editor';
+      return undefined;
+    },
+  } as unknown as import('express').Request;
+
+  assert.deepEqual(geminiRequestContext(request), {
+    referrer: 'https://preview.example/workspace',
+  });
+});
+
+test('invalid request referrers are never forwarded to Gemini', () => {
+  const request = {
+    header(name: string) {
+      if (name === 'referer') return 'javascript:alert(1)';
+      if (name === 'origin') return 'https://user:password@example.com/';
+      return undefined;
+    },
+  } as unknown as import('express').Request;
+
+  assert.deepEqual(geminiRequestContext(request), {});
 });
 
 test('multipart API routes reject cross-origin requests', async () => {
