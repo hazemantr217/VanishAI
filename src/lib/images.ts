@@ -3,6 +3,7 @@ import { canvasToManagedImageUrl, createManagedImageUrl, imageMimeType } from '.
 
 const SUPPORTED_UPLOAD_MIME_TYPES = new Set(['image/png', 'image/jpeg', 'image/webp']);
 const MAX_UPLOAD_BYTES = 45 * 1024 * 1024;
+export const MAX_BATCH_IMAGES = 100;
 
 function loadImage(dataUrl: string): Promise<HTMLImageElement> {
   return new Promise((resolve, reject) => {

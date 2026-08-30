@@ -16,6 +16,10 @@ export type ImageModel = GeminiImageModel | OpenAIImageModel;
 export const SUPPORTED_ASPECT_RATIOS = [
   'original',
   '1:1',
+  '1:4',
+  '4:1',
+  '1:8',
+  '8:1',
   '2:3',
   '3:2',
   '3:4',
@@ -45,7 +49,9 @@ export function isSupportedAspectRatio(value: string): value is AspectRatio {
 }
 
 export function supportsImageSize(model: ImageModel, imageSize: ImageSize): boolean {
-  if (model === 'gemini-3.1-flash-lite-image' || model === 'gpt-image-1.5') {
+  // AI Studio Gemini image models use their native output configuration. The
+  // client intentionally never advertises or sends a 1K/2K/4K override.
+  if (isGeminiModel(model) || model === 'gpt-image-1.5') {
     return imageSize === '1K';
   }
   return true;

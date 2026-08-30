@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Upload, Image as ImageIcon, Eraser, Move, Download, Loader2, Undo, Redo, Settings2, Crop as CropIcon, Trash2, Eye, History, Square, Wand2, Database, X, Pencil, Check, ChevronUp, ChevronDown, StopCircle, Archive, RotateCcw, FileArchive, FolderArchive, Clock, Layers, Save, CheckCircle, Sparkles, RefreshCw, CheckCircle2, AlertCircle, KeyRound, ShieldCheck } from 'lucide-react';
+import { Upload, Download, Loader2, Settings2, Trash2, X, Pencil, Check, ChevronUp, ChevronDown, StopCircle, Archive, RotateCcw, FileArchive, FolderArchive, Clock, Layers, Save, CheckCircle, Sparkles, RefreshCw, CheckCircle2, AlertCircle } from 'lucide-react';
 import CanvasWorkspace from './components/CanvasWorkspace';
 import CropModal from './components/CropModal';
 import BatchGrid from './components/BatchGrid';
@@ -8,19 +8,21 @@ import ImageLightbox from './components/ImageLightbox';
 import AspectRatioSelector from './components/AspectRatioSelector';
 import ApiKeyDialog from './components/ApiKeyDialog';
 import ArchiveSidebar from './components/ArchiveSidebar';
+import AppHeader from './components/AppHeader';
+import VanishToolbar from './components/VanishToolbar';
 import { cn } from './lib/utils';
 import { v4 as uuidv4 } from 'uuid';
 import type { BatchItem } from './types';
 import type { AspectRatio, ImageModel, ImageSize } from './shared/models';
-import { GEMINI_IMAGE_MODELS, imageSizesForModel, isOpenAIModel, isSupportedAspectRatio, supportsImageSize } from './shared/models';
-import { filesToBatchItems, filenameForDataUrl } from './lib/images';
+import { GEMINI_IMAGE_MODELS, isOpenAIModel, isSupportedAspectRatio, supportsImageSize } from './shared/models';
+import { filesToBatchItems, filenameForDataUrl, MAX_BATCH_IMAGES } from './lib/images';
 import { acceptItemResult, applyImageEdit, redoItem, undoItem } from './lib/items';
 import { useManagedImageLifecycle } from './hooks/useManagedImageLifecycle';
 import { useRuntimeCredentials } from './hooks/useRuntimeCredentials';
 import { usePresets } from './hooks/usePresets';
 import { usePersistentWorkspace } from './hooks/usePersistentWorkspace';
 import { useImageProcessor } from './hooks/useImageProcessor';
-import { 
+import {
   loadAllSessions, 
   saveWorkSession, 
   deleteWorkSession, 
@@ -28,6 +30,13 @@ import {
   clearDatabase,
   type WorkSession,
 } from './lib/db';
+
+const ITEM_STATUS_LABEL: Record<BatchItem['status'], string> = {
+  pending: 'بانتظار التحديد',
+  processing: 'جارٍ التوليد',
+  completed: 'مكتملة',
+  error: 'تحتاج إعادة محاولة',
+};
 
 export default function App() {
   const [items, setItems] = useState<BatchItem[]>([]);
@@ -135,6 +144,11 @@ export default function App() {
   const [showVanishAdvanced, setShowVanishAdvanced] = useState(false);
   const [showVanishSystemSettings, setShowVanishSystemSettings] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const batchItemCountRef = useRef(0);
+
+  useEffect(() => {
+    batchItemCountRef.current = items.length;
+  }, [items.length]);
 
   useManagedImageLifecycle(items, dbItems, sessions);
 
@@ -266,6 +280,10 @@ export default function App() {
   const handleAddFromDbToActive = (item: BatchItem) => {
     // Check if it's already in items to avoid duplicates
     if (!items.some(i => i.id === item.id)) {
+      if (items.length >= MAX_BATCH_IMAGES) {
+        window.alert(`مساحة العمل تحتوي بالفعل على ${MAX_BATCH_IMAGES} صورة. احذف صورة أولًا.`);
+        return;
+      }
       setItems(prev => [item, ...prev]);
       setActiveItemId(item.id);
     } else {
@@ -279,7 +297,7 @@ export default function App() {
     setItems(prev => {
       const existingIds = new Set(prev.map(i => i.id));
       const toAdd = dbItems.filter(i => !existingIds.has(i.id));
-      const newItems = [...toAdd, ...prev];
+      const newItems = [...toAdd, ...prev].slice(0, MAX_BATCH_IMAGES);
       if (!activeItemId && newItems.length > 0) {
         setActiveItemId(newItems[0].id);
       }
@@ -289,6 +307,7 @@ export default function App() {
 
   // Clear all images from the archive database
   const handleClearAllArchiveImages = async () => {
+    if (!window.confirm('هل تريد حذف كل الصور من المكتبة؟ لن تُحذف الصور المفتوحة حاليًا من مساحة العمل.')) return;
     setDbItems([]);
     await clearDatabase();
   };
@@ -301,6 +320,7 @@ export default function App() {
     currentSessionCreatedAtRef.current = session.createdAt || Date.now();
     setActiveItemId(session.items[0]?.id || null);
     setShowSidebar(true);
+    setShowDbSidebar(false);
   };
 
   // Delete a specific work session manually
@@ -309,14 +329,22 @@ export default function App() {
       e.preventDefault();
       e.stopPropagation();
     }
+    if (!window.confirm('حذف نقطة الرجوع هذه نهائيًا؟')) return;
     await deleteWorkSession(sessionId);
     setSessions(prev => prev.filter(s => s.id !== sessionId));
+    if (sessionId === currentSessionId) {
+      setCurrentSessionId('session_' + Date.now());
+      currentSessionCreatedAtRef.current = Date.now();
+    }
   };
 
   // Clear all saved sessions manually
   const handleClearAllSessions = async () => {
+    if (!window.confirm('هل تريد حذف كل جلسات الرجوع المحفوظة؟ الصور الموجودة في مساحة العمل لن تتأثر.')) return;
     await clearAllWorkSessions();
     setSessions([]);
+    setCurrentSessionId('session_' + Date.now());
+    currentSessionCreatedAtRef.current = Date.now();
   };
 
   // Create a fresh new work session checkpoint
@@ -348,17 +376,31 @@ export default function App() {
     }
   }, []);
 
-  const addImageFiles = async (files: File[]) => {
-    const { items: loadedItems, failedFiles } = await filesToBatchItems(files, uuidv4);
+  const addImageFiles = useCallback(async (files: File[]) => {
+    const availableSlots = Math.max(0, MAX_BATCH_IMAGES - batchItemCountRef.current);
+    if (availableSlots === 0) {
+      window.alert(`الدفعة الحالية وصلت للحد الأقصى: ${MAX_BATCH_IMAGES} صورة.`);
+      return;
+    }
+
+    const selectedFiles = files.slice(0, availableSlots);
+    const skippedForCapacity = Math.max(0, files.length - selectedFiles.length);
+    batchItemCountRef.current += selectedFiles.length;
+    const { items: loadedItems, failedFiles } = await filesToBatchItems(selectedFiles, uuidv4);
+    batchItemCountRef.current -= selectedFiles.length - loadedItems.length;
     if (loadedItems.length > 0) {
       setItems((previousItems) => [...loadedItems, ...previousItems]);
       setActiveItemId(loadedItems[0].id);
     }
-    if (failedFiles.length > 0) {
+    if (failedFiles.length > 0 || skippedForCapacity > 0) {
       console.error('Failed image files:', failedFiles);
-      window.alert(`تعذر تحميل ${failedFiles.length} ملف صورة.`);
+      const parts = [
+        failedFiles.length > 0 ? `تعذر تحميل ${failedFiles.length} ملف غير مدعوم أو أكبر من 45MB.` : '',
+        skippedForCapacity > 0 ? `تم تجاوز ${skippedForCapacity} ملف لأن الحد الأقصى للدفعة ${MAX_BATCH_IMAGES} صورة.` : '',
+      ].filter(Boolean);
+      window.alert(parts.join('\n'));
     }
-  };
+  }, []);
 
   useEffect(() => {
     const handlePaste = (e: ClipboardEvent) => {
@@ -384,7 +426,7 @@ export default function App() {
 
     window.addEventListener('paste', handlePaste);
     return () => window.removeEventListener('paste', handlePaste);
-  }, []);
+  }, [addImageFiles]);
 
   const vanishSteps = [
     "جاري تحليل تفاصيل الصورة وأبعاد العناصر...",
@@ -646,6 +688,7 @@ export default function App() {
   };
 
   const handleUndoAllBatch = () => {
+    if (!window.confirm('هل تريد التراجع عن كل نتائج وتعديلات الدفعة وإعادتها للصور الأصلية؟')) return;
     // Revert all modified items to their original initial state
     setItems(prev => prev.map(item => {
       const initial = item.initialImage || (item.editHistory && item.editHistory.length > 0 ? item.editHistory[0] : item.originalImage);
@@ -669,6 +712,7 @@ export default function App() {
   };
 
   const clearAllBatch = () => {
+    if (items.length > 0 && !window.confirm(`حذف كل صور الدفعة الحالية (${items.length}) من مساحة العمل؟`)) return;
     setItems([]);
     setActiveItemId(null);
   };
@@ -701,283 +745,80 @@ export default function App() {
           >
             <div className="text-3xl font-bold text-white flex flex-col items-center gap-4">
               <Upload size={48} />
-              Drop images here
+              أفلت الصور هنا
             </div>
           </motion.div>
         )}
       </AnimatePresence>
-      {/* Header */}
-      <header className="min-h-16 md:h-16 border-b border-white/10 bg-white/5 backdrop-blur-md flex flex-col md:flex-row md:items-center justify-between px-3 md:px-6 py-2.5 md:py-0 z-10 gap-2.5 md:gap-2">
-        <div className="flex items-center justify-between md:justify-start gap-2 md:gap-3 w-full md:w-auto shrink-0">
-          <div className="flex items-center gap-2 md:gap-3">
-            <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-purple-500 to-blue-500 flex items-center justify-center">
-              <ImageIcon className="w-5 h-5 text-white" />
-            </div>
-            <div>
-              <h1 className="text-xs sm:text-sm md:text-lg font-bold tracking-tight">VanishAI</h1>
-              <p className="text-[9px] text-neutral-500 hidden sm:block font-sans">Intelligent Object Removal</p>
-            </div>
-          </div>
-
-          {/* Mode Selector - Header Segmented Control */}
-          <div className="flex items-center bg-black/40 border border-white/10 rounded-xl p-0.5 gap-1 shrink-0" dir="rtl">
-            <button
-              onClick={() => {
-                setAppMode('vanish');
-                setTool('brush');
-              }}
-              className={cn(
-                "px-2.5 py-1 rounded-lg text-[10px] md:text-xs font-bold transition-all cursor-pointer",
-                appMode === 'vanish'
-                  ? "bg-purple-600/35 text-purple-200 border border-purple-500/25 shadow-sm"
-                  : "text-neutral-400 hover:text-white border border-transparent"
-              )}
-            >
-              ✨ <span className="hidden sm:inline font-sans">وضع الفانيش</span><span className="sm:hidden font-sans">فانيش</span>
-            </button>
-            <button
-              onClick={() => {
-                setAppMode('reimagine');
-              }}
-              className={cn(
-                "px-2.5 py-1 rounded-lg text-[10px] md:text-xs font-bold transition-all cursor-pointer",
-                appMode === 'reimagine'
-                  ? "bg-gradient-to-r from-purple-600/35 to-blue-600/35 text-blue-200 border border-purple-500/25 shadow-sm"
-                  : "text-neutral-400 hover:text-white border border-transparent"
-              )}
-            >
-              🎨 <span className="hidden sm:inline font-sans">وضع الباتش</span><span className="sm:hidden font-sans">باتش</span>
-            </button>
-          </div>
-        </div>
-
-        {/* Model Switcher - Center Header */}
-        <div className="flex bg-neutral-900 border border-white/10 rounded-xl p-0.5 sm:p-1 gap-1 scale-90 sm:scale-100 shrink-0">
-          <span className="text-neutral-400 text-[10px] md:text-xs px-1.5 md:px-2 flex items-center hidden sm:inline-block font-sans">الموديل النشط:</span>
-          <select
-            value={selectedModel}
-            onChange={(e) => setSelectedModel(e.target.value as ImageModel)}
-            className="bg-neutral-950 border border-neutral-800 hover:border-neutral-700 text-white text-[10px] md:text-xs rounded-lg px-2 py-1 md:px-2.5 md:py-1.5 outline-none focus:border-purple-500 transition-all font-sans cursor-pointer min-w-[130px] sm:min-w-[170px]"
-          >
-            <option value="gemini-3.1-flash-lite-image">🍌 Nano Banana 2 Lite</option>
-            <option value="gemini-3.1-flash-image">🍌 Nano Banana 2</option>
-            {runtimeConfig?.openaiAvailable && (
-              <optgroup label="OpenAI">
-                <option value="gpt-image-1.5">OpenAI GPT Image 1.5</option>
-                <option value="gpt-image-2">OpenAI GPT Image 2</option>
-              </optgroup>
-            )}
-          </select>
-          {isOpenAIModel(selectedModel) && (
-            <select
-              value={imageSize}
-              onChange={(event) => setImageSize(event.target.value as ImageSize)}
-              className="rounded-lg border border-neutral-800 bg-neutral-950 px-2 py-1 text-[10px] text-white outline-none transition hover:border-neutral-700 focus:border-purple-500"
-              title="دقة صورة OpenAI الناتجة"
-            >
-              {imageSizesForModel(selectedModel).map((size) => (
-                <option key={size} value={size}>{size}</option>
-              ))}
-            </select>
-          )}
-        </div>
-
-        <div className="flex items-center justify-between md:justify-end gap-2 w-full md:w-auto mt-1 md:mt-0">
-
-          {/* Actions list */}
-          <div className="flex items-center gap-1 md:gap-3 overflow-x-auto no-scrollbar py-0.5 max-w-full justify-end flex-1 md:flex-initial">
-            {requiresUserApiKey && (
-              <button
-                type="button"
-                onClick={() => setShowApiKeyDialog(true)}
-                className={cn(
-                  'flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-[10px] font-bold transition',
-                  hasUserApiKey
-                    ? 'border-emerald-500/25 bg-emerald-500/10 text-emerald-300 hover:bg-emerald-500/15'
-                    : 'border-amber-500/30 bg-amber-500/10 text-amber-300 hover:bg-amber-500/15',
-                )}
-                title="إدارة مفتاح Gemini لهذه الجلسة"
-              >
-                <KeyRound className="h-3.5 w-3.5" />
-                <span>{hasUserApiKey ? 'المفتاح متصل' : 'أضف المفتاح'}</span>
-              </button>
-            )}
-            {activeItem && (
-              <button 
-                onClick={(e) => handleDeleteItem(activeItem.id, e)}
-                className="p-1.5 md:px-4 md:py-2 rounded-full bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/30 transition-colors flex items-center justify-center gap-1.5 text-xs md:text-sm font-medium cursor-pointer"
-                title="حذف الصورة الحالية"
-              >
-                <Trash2 className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-red-400" />
-                <span className="hidden md:inline">حذف الصورة</span>
-              </button>
-            )}
-            {activeItem && (
-              <button 
-                onClick={() => handleDownload(activeItem.resultImage || activeItem.originalImage, `vanishai-${activeItem.id}.jpg`)}
-                className="p-1.5 md:px-4 md:py-2 rounded-full bg-blue-500/10 hover:bg-blue-500/20 text-blue-400 border border-blue-500/30 transition-colors flex items-center justify-center gap-1.5 text-xs md:text-sm font-medium"
-                title="Download Current Image"
-              >
-                <Download className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-                <span className="hidden md:inline">Download</span>
-              </button>
-            )}
-            <input 
-              type="file" 
-              ref={fileInputRef} 
-              onChange={handleFileUpload} 
-              multiple 
-              accept="image/png,image/jpeg,image/webp"
-              className="hidden" 
-            />
-            <button 
-              onClick={processAll}
-              disabled={isProcessing || items.length === 0 || !runtimeConfig}
-              className="p-1.5 md:px-4 md:py-2 rounded-full bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-500 hover:to-blue-500 disabled:opacity-50 transition-all flex items-center justify-center gap-1.5 text-xs md:text-sm font-medium shadow-lg shadow-purple-500/20 cursor-pointer"
-              title="Process All Masked Images"
-            >
-              {isProcessing ? <Loader2 className="w-3.5 h-3.5 sm:w-4 sm:h-4 animate-spin" /> : null}
-              <span className="hidden sm:inline">{(appMode === 'reimagine' && enableBatchMerge) ? 'دمج كافة الصور 🧩' : 'Process All'}</span>
-              <span className="sm:hidden">Run</span>
-            </button>
-
-            {appMode === 'reimagine' && (
-              <button 
-                onClick={() => setShowReimagineSidebar(p => !p)}
-                className={cn(
-                  "p-1.5 md:px-4 md:py-2 rounded-full transition-all border flex items-center justify-center gap-1.5 text-xs md:text-sm font-medium cursor-pointer",
-                  showReimagineSidebar 
-                    ? "bg-purple-600/20 border-purple-500/40 text-purple-200" 
-                    : "bg-white/10 border-transparent text-neutral-300 hover:bg-white/20"
-                )}
-                title="إظهار/إخفاء لوحة الخيارات"
-              >
-                <Settings2 className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-purple-400" />
-                <span>{showReimagineSidebar ? 'إخفاء الخيارات ✕' : 'إظهار الخيارات ⚙️'}</span>
-              </button>
-            )}
-
-            <button 
-              onClick={() => setShowSidebar(p => !p)}
-              className={cn(
-                "p-1.5 md:px-4 md:py-2 rounded-full transition-all border flex items-center justify-center gap-1.5 text-xs md:text-sm font-medium cursor-pointer",
-                showSidebar 
-                  ? "bg-purple-600/20 border-purple-500/40 text-purple-200" 
-                  : "bg-white/10 border-transparent text-neutral-300 hover:bg-white/20"
-              )}
-              title="Toggle Images Batch Queue"
-            >
-              <History className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-              <span className="hidden md:inline">Queue ({items.length})</span>
-              <span className="sm:hidden">({items.length})</span>
-            </button>
-
-            <button 
-              onClick={() => setShowDbSidebar(p => !p)}
-              className={cn(
-                "p-1.5 md:px-4 md:py-2 rounded-full transition-all border flex items-center justify-center gap-1.5 text-xs md:text-sm font-medium cursor-pointer",
-                showDbSidebar 
-                  ? "bg-purple-600/20 border-purple-500/40 text-purple-200" 
-                  : "bg-white/10 border-transparent text-neutral-300 hover:bg-white/20"
-              )}
-              title="الأرشيف والتحميل من قاعدة البيانات"
-            >
-              <Database className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-purple-400" />
-              <span className="hidden md:inline">الأرشيف ({dbItems.length})</span>
-              <span className="sm:hidden">({dbItems.length})</span>
-            </button>
-          </div>
-        </div>
-      </header>
-
+      <AppHeader
+        appMode={appMode}
+        onModeChange={(mode) => {
+          setAppMode(mode);
+          if (mode === 'vanish') setTool('brush');
+        }}
+        selectedModel={selectedModel}
+        onModelChange={setSelectedModel}
+        imageSize={imageSize}
+        onImageSizeChange={setImageSize}
+        openaiAvailable={Boolean(runtimeConfig?.openaiAvailable)}
+        requiresUserApiKey={requiresUserApiKey}
+        hasUserApiKey={hasUserApiKey}
+        onManageApiKey={() => setShowApiKeyDialog(true)}
+        hasActiveItem={Boolean(activeItem)}
+        onDeleteActive={() => activeItem && handleDeleteItem(activeItem.id)}
+        onDownloadActive={() => activeItem && handleDownload(
+          activeItem.resultImage || activeItem.originalImage,
+          filenameForDataUrl(`vanishai-${activeItem.id}`, activeItem.resultImage || activeItem.originalImage),
+        )}
+        fileInputRef={fileInputRef}
+        onFileUpload={handleFileUpload}
+        isProcessing={isProcessing}
+        primaryDisabled={
+          !runtimeConfig ||
+          (appMode === 'vanish'
+            ? !items.some((item) => (item.status === 'pending' || item.status === 'error') && Boolean(item.maskedImage))
+            : enableBatchMerge
+              ? items.length === 0
+              : !items.some((item) => item.status === 'pending' || item.status === 'error'))
+        }
+        isMergeMode={appMode === 'reimagine' && enableBatchMerge}
+        onProcess={() => void processAll()}
+        onStop={handleForceStop}
+        optionsOpen={showReimagineSidebar}
+        onToggleOptions={() => setShowReimagineSidebar((open) => !open)}
+        queueOpen={showSidebar}
+        onToggleQueue={() => setShowSidebar((open) => !open)}
+        itemCount={items.length}
+        archiveOpen={showDbSidebar}
+        onToggleArchive={() => setShowDbSidebar((open) => !open)}
+        archiveCount={dbItems.length}
+      />
       <div className="flex-1 flex flex-col lg:flex-row overflow-hidden relative">
-        {/* Toolbar */}
         {appMode === 'vanish' && (
-          <motion.div 
-            initial={{ opacity: 0, scale: 0.95 }}
-            animate={{ opacity: 1, scale: 1 }}
-            className="w-full lg:w-16 h-14 lg:h-full border-t lg:border-t-0 lg:border-r border-white/10 bg-neutral-900/50 backdrop-blur-xl flex flex-row lg:flex-col items-center justify-between lg:justify-start py-2 lg:py-4 px-4 lg:px-2 gap-2 lg:gap-3 z-10 overflow-x-auto lg:overflow-y-auto order-last lg:order-none shrink-0 no-scrollbar"
-            style={{ scrollbarWidth: 'none' }}
-          >
-            <ToolButton 
-              icon={ImageIcon} 
-              active={tool === 'brush'} 
-              onClick={() => handleToolClick('brush')} 
-              onContextMenu={(e: any) => handleToolContextMenu(e, 'brush')}
-              tooltip="فرشاة (B) - كليك يمين للخيارات" 
-            />
-            <ToolButton 
-              icon={Eraser} 
-              active={tool === 'eraser'} 
-              onClick={() => handleToolClick('eraser')} 
-              onContextMenu={(e: any) => handleToolContextMenu(e, 'eraser')}
-              tooltip="ممحاة (E) - كليك يمين للخيارات" 
-            />
-            <ToolButton 
-              icon={Square} 
-              active={tool === 'rect'} 
-              onClick={() => handleToolClick('rect')} 
-              onContextMenu={(e: any) => handleToolContextMenu(e, 'rect')}
-              tooltip="تحديد مستطيل (M) - كليك يمين للخيارات" 
-            />
-            <ToolButton 
-              icon={Wand2} 
-              active={tool === 'wand'} 
-              onClick={() => handleToolClick('wand')} 
-              onContextMenu={(e: any) => handleToolContextMenu(e, 'wand')}
-              tooltip="عصا سحرية (W) - كليك يمين للخيارات" 
-            />
-            
-            <div className="w-px h-6 lg:w-8 lg:h-px bg-white/10 shrink-0" />
-            
-            <ToolButton icon={CropIcon} onClick={() => activeItem && setShowCropModal(true)} tooltip="Crop Image" disabled={!activeItem} />
-            <ToolButton icon={Trash2} onClick={() => setClearTrigger(c => c + 1)} tooltip="Clear Mask" disabled={!activeItem || !!activeItem.resultImage} />
-            <ToolButton icon={Download} onClick={() => activeItem && handleDownload(activeItem.resultImage || activeItem.originalImage, `vanishai-${activeItem.id}.jpg`)} tooltip="Download Image" disabled={!activeItem} />
-            
-            <div className="w-px h-6 lg:w-8 lg:h-px bg-white/10 shrink-0" />
-            
-            <ToolButton 
-              icon={Eye} 
-              onPointerDown={() => setIsComparing(true)} 
-              onPointerUp={() => setIsComparing(false)} 
-              onPointerLeave={() => setIsComparing(false)} 
-              tooltip="Hold to Compare (Original)" 
-              disabled={!activeItem || activeItem.editHistory.length === 0} 
-            />
-            <ToolButton 
-              icon={History} 
-              onClick={handleUndoEdit} 
-              tooltip="استعادة التعديل السابق (Undo Last Edit)" 
-              disabled={!activeItem || activeItem.editHistory.length === 0} 
-            />
-            <ToolButton 
-              icon={History} 
-              iconClassName="-scale-x-100"
-              onClick={handleRedoEdit} 
-              tooltip="التراجع عن الاستعادة (Redo Last Edit)" 
-              disabled={!activeItem || !activeItem.redoEditHistory || activeItem.redoEditHistory.length === 0} 
-            />
- 
-            <div className="w-px h-6 lg:w-8 lg:h-px bg-white/10 shrink-0" />
- 
-            <ToolButton icon={Undo} onClick={() => {
-              const event = new KeyboardEvent('keydown', { key: 'z', ctrlKey: true });
-              window.dispatchEvent(event);
-            }} tooltip="Undo Brush (Ctrl+Z)" />
-            <ToolButton icon={Redo} onClick={() => {
-              const event = new KeyboardEvent('keydown', { key: 'z', ctrlKey: true, shiftKey: true });
-              window.dispatchEvent(event);
-            }} tooltip="Redo Brush (Ctrl+Shift+Z)" />
-
-            <div className="w-px h-6 lg:w-8 lg:h-px bg-white/10 shrink-0" />
-
-            <ToolButton 
-              icon={Settings2} 
-              active={showBrushPanel} 
-              onClick={() => setShowBrushPanel(!showBrushPanel)} 
-              tooltip="Toggle Brush Settings" 
-            />
-          </motion.div>
+          <VanishToolbar
+            tool={tool}
+            onToolChange={handleToolClick}
+            onToolOptions={handleToolContextMenu}
+            hasActiveItem={Boolean(activeItem)}
+            hasMask={Boolean(activeItem?.maskedImage)}
+            hasResult={Boolean(activeItem?.resultImage)}
+            hasComparison={Boolean(activeItem?.resultImage || (activeItem && activeItem.originalImage !== activeItem.initialImage))}
+            canUndoImageEdit={Boolean(activeItem?.editHistory.length)}
+            canRedoImageEdit={Boolean(activeItem?.redoEditHistory?.length)}
+            isProcessing={isProcessing}
+            onCrop={() => setShowCropModal(true)}
+            onClearMask={() => setClearTrigger((trigger) => trigger + 1)}
+            onDownload={() => activeItem && handleDownload(
+              activeItem.resultImage || activeItem.originalImage,
+              `vanishai-${activeItem.id}`,
+            )}
+            onCompareStart={() => setIsComparing(true)}
+            onCompareEnd={() => setIsComparing(false)}
+            onUndoImageEdit={handleUndoEdit}
+            onRedoImageEdit={handleRedoEdit}
+            settingsOpen={showBrushPanel}
+            onToggleSettings={() => setShowBrushPanel((open) => !open)}
+          />
         )}
 
         {/* Properties Panel (Floating) */}
@@ -1009,7 +850,7 @@ export default function App() {
                     <div className="space-y-3">
                       <div className="space-y-1">
                         <div className="flex justify-between text-xs text-neutral-400">
-                          <span>Size</span>
+                          <span>حجم الفرشاة</span>
                           <span className="font-mono text-purple-400 font-semibold">{brushSize}px</span>
                         </div>
                         <input 
@@ -1024,7 +865,7 @@ export default function App() {
                       
                       <div className="space-y-1">
                         <div className="flex justify-between text-xs text-neutral-400">
-                          <span>Hardness</span>
+                          <span>صلابة الحواف</span>
                           <span className="font-mono text-purple-400 font-semibold">{brushHardness}%</span>
                         </div>
                         <input 
@@ -1271,24 +1112,6 @@ export default function App() {
                           )}
                         </div>
 
-                        {/* Credential mode is detected by the server; secrets never enter the bundle. */}
-                        <div className="space-y-2 pt-2 border-t border-white/5">
-                          <div className="text-xs text-neutral-400 font-medium font-sans">اتصال آمن بالخادم</div>
-                          <div className="rounded-xl border border-white/5 bg-black/40 p-2.5 text-[10px] leading-relaxed text-neutral-400">
-                            <div className="flex items-center justify-between gap-2">
-                              <span className="flex items-center gap-1.5 font-bold text-neutral-200">
-                                <ShieldCheck className="h-3.5 w-3.5 text-emerald-400" />
-                                {requiresUserApiKey ? 'مفتاح حسابك' : 'مفتاح AI Studio الافتراضي'}
-                              </span>
-                              {requiresUserApiKey && (
-                                <button type="button" onClick={() => setShowApiKeyDialog(true)} className="text-purple-300 hover:text-purple-200">
-                                  {hasUserApiKey ? 'تغيير المفتاح' : 'إضافة المفتاح'}
-                                </button>
-                              )}
-                            </div>
-                            <p className="mt-1">كل عمليات Gemini تمر عبر الخادم ولا يتم تضمين أي مفتاح في كود المتصفح.</p>
-                          </div>
-                        </div>
                       </motion.div>
                     )}
                   </AnimatePresence>
@@ -1491,7 +1314,7 @@ export default function App() {
                     className="max-w-full max-h-full object-contain rounded-2xl shadow-2xl border border-white/10"
                   />
                   <div className="absolute top-4 left-4 bg-black/70 text-white px-4 py-2 rounded-full text-sm font-medium backdrop-blur-md border border-white/10">
-                    Original Image
+                    الصورة الأصلية
                   </div>
                 </motion.div>
               )}
@@ -1527,7 +1350,7 @@ export default function App() {
                        }} 
                        className="px-4 py-2.5 bg-green-500 hover:bg-green-600 text-white rounded-xl text-xs sm:text-sm font-semibold transition-colors shadow-lg shadow-green-500/20 text-center w-full sm:w-auto"
                      >
-                       Accept & Edit Further
+                       اعتماد ومتابعة التعديل
                      </button>
                      <button 
                        onClick={() => {
@@ -1541,14 +1364,14 @@ export default function App() {
                        }} 
                        className="px-4 py-2.5 bg-neutral-800 hover:bg-neutral-700 text-white rounded-xl text-xs sm:text-sm font-semibold transition-colors border border-white/10 text-center w-full sm:w-auto"
                      >
-                       Discard
+                       تجاهل النتيجة
                      </button>
                      <button 
                        onClick={() => handleDownload(activeItem.resultImage!, `vanishai-${activeItem.id}.jpg`)} 
                        className="px-4 py-2.5 bg-blue-500 hover:bg-blue-600 text-white rounded-xl text-xs sm:text-sm font-semibold transition-colors shadow-lg shadow-blue-500/20 flex items-center justify-center gap-2 w-full sm:w-auto"
                      >
                        <Download size={16} />
-                       Download
+                       تنزيل
                      </button>
                   </div>
                 </motion.div>
@@ -1660,7 +1483,7 @@ export default function App() {
                               item.status === 'processing' ? "bg-blue-500" :
                               item.status === 'error' ? "bg-red-500" : "bg-neutral-500"
                             )} />
-                            <span className="text-xs text-neutral-400 capitalize">{item.status}</span>
+                            <span className="text-xs text-neutral-400">{ITEM_STATUS_LABEL[item.status]}</span>
                           </div>
                         </div>
                         
@@ -1951,25 +1774,6 @@ export default function App() {
                 />
               </div>
 
-              {/* Server-selected credential mode */}
-              <div className="space-y-2 bg-black/20 p-3 rounded-xl border border-white/5">
-                <div className="text-[11px] text-neutral-400 font-bold font-sans">🔐 اتصال Gemini الآمن:</div>
-                <div className="rounded-xl border border-white/5 bg-black/40 p-2.5">
-                  <div className="flex items-center justify-between gap-2 text-[10px]">
-                    <span className="flex items-center gap-1.5 font-bold text-emerald-300">
-                      <ShieldCheck className="h-3.5 w-3.5" />
-                      {requiresUserApiKey ? 'BYOK — مفتاح المستخدم' : 'Google AI Studio — تلقائي'}
-                    </span>
-                    {requiresUserApiKey && (
-                      <button type="button" disabled={isProcessing} onClick={() => setShowApiKeyDialog(true)} className="font-bold text-purple-300 hover:text-purple-200 disabled:opacity-50">
-                        {hasUserApiKey ? 'تغيير' : 'إضافة'}
-                      </button>
-                    )}
-                  </div>
-                  <p className="mt-1 text-[9px] leading-relaxed text-neutral-500">المفتاح لا يُضمّن داخل ملفات الواجهة ولا يُحفظ على الخادم.</p>
-                </div>
-              </div>
-
               {/* Batch Merge Option Card */}
               <div className="space-y-3 bg-purple-950/20 p-3 rounded-xl border border-purple-500/25">
                 <div className="flex justify-between items-center text-xs text-neutral-300">
@@ -2228,7 +2032,7 @@ export default function App() {
                   </div>
                   <h4 className="text-base font-bold text-neutral-200 group-hover:text-white transition-colors mb-2 font-sans">قم برفع صور المعالجة الجماعية (Batch)</h4>
                   <p className="text-xs text-neutral-400 max-w-sm leading-relaxed mb-6 font-sans">
-                    قم بسحب وإفلات صورك هنا أو انقر لاختيارها من جهازك مباشرة. يمكنك رفع لغاية 5 صور أو أكثر ومعالجتهم دفعة واحدة بالتوازي لتوفير الوقت!
+                    ارفع حتى 100 صورة مرة واحدة. تُحفظ الصور كملفات خفيفة في الذاكرة وتدخل طابور معالجة متدرج لمنع تهنيج المتصفح أو استهلاك الحصة دفعة واحدة.
                   </p>
                   <span className="px-4 py-2 bg-purple-600 hover:bg-purple-500 text-white text-xs font-bold rounded-xl shadow-lg shadow-purple-500/10 transition-colors font-sans">
                     اختيار الصور من الجهاز 💻
@@ -2365,26 +2169,5 @@ export default function App() {
         onDeleteImage={handleDeleteFromDb}
       />
     </div>
-  );
-}
-
-function ToolButton({ icon: Icon, active, onClick, onContextMenu, onPointerDown, onPointerUp, onPointerLeave, tooltip, disabled, iconClassName }: any) {
-  return (
-    <button
-      onClick={onClick}
-      onContextMenu={onContextMenu}
-      onPointerDown={onPointerDown}
-      onPointerUp={onPointerUp}
-      onPointerLeave={onPointerLeave}
-      title={tooltip}
-      disabled={disabled}
-      className={cn(
-        "w-10 h-10 shrink-0 rounded-xl flex items-center justify-center transition-all relative group",
-        active ? "bg-purple-500 text-white shadow-lg shadow-purple-500/20" : "text-neutral-400 hover:text-white hover:bg-white/10",
-        disabled && "opacity-50 cursor-not-allowed"
-      )}
-    >
-      <Icon className={cn("w-5 h-5", iconClassName)} />
-    </button>
   );
 }

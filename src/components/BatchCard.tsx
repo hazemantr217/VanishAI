@@ -306,7 +306,7 @@ function BatchCard({
                 title="اعتماد النتيجة الحالية كصورة أساسية للمزيد من التعديل"
               >
                 <Check className="w-3.5 h-3.5 shrink-0" />
-                <span className="whitespace-nowrap">اعتماد (Accept)</span>
+                <span className="whitespace-nowrap">اعتماد النتيجة</span>
               </button>
 
               {onUndo && (

@@ -56,7 +56,7 @@ export default function CropModal({ imageUrl, onComplete, onCancel }: CropModalP
         className="bg-neutral-900 border border-white/10 rounded-2xl p-6 max-w-4xl w-full max-h-[90vh] flex flex-col"
       >
         <div className="flex justify-between items-center mb-4">
-          <h2 className="text-xl font-semibold text-white">Crop Image</h2>
+          <h2 className="text-xl font-semibold text-white">قص الصورة</h2>
           <button onClick={onCancel} className="text-neutral-400 hover:text-white">
             <X className="w-6 h-6" />
           </button>

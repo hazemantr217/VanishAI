@@ -3,9 +3,12 @@ import type { Preset } from '../types';
 import { DEFAULT_PRESETS } from '../data/default-presets';
 
 const STORAGE_KEY = 'vanishai_all_presets';
+const STORAGE_VERSION_KEY = 'vanishai_preset_library_version';
+const PRESET_LIBRARY_VERSION = '2026-08-30-v2';
 
 function persistPresets(presets: Preset[]): void {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(presets));
+  localStorage.setItem(STORAGE_VERSION_KEY, PRESET_LIBRARY_VERSION);
 }
 
 function loadPresets(): Preset[] {
@@ -22,11 +25,13 @@ function loadPresets(): Preset[] {
         prompt: value.prompt as string,
         isCustom: value.isCustom === true,
       }));
+    const defaultNames = new Set(DEFAULT_PRESETS.map((preset) => preset.name));
+    const customPresets = validSaved.filter((preset) => preset.isCustom || !defaultNames.has(preset.name));
+    const savedVersion = localStorage.getItem(STORAGE_VERSION_KEY);
     const existingNames = new Set(validSaved.map((preset) => preset.name));
-    const merged = [
-      ...DEFAULT_PRESETS.filter((preset) => !existingNames.has(preset.name)),
-      ...validSaved,
-    ];
+    const merged = savedVersion === PRESET_LIBRARY_VERSION
+      ? [...DEFAULT_PRESETS.filter((preset) => !existingNames.has(preset.name)), ...validSaved]
+      : [...DEFAULT_PRESETS, ...customPresets];
     persistPresets(merged);
     return merged;
   } catch (error) {
@@ -69,7 +74,7 @@ export function usePresets(prompt: string, selectedPresetName: string | null) {
     if (!editingPresetName.trim() || !editingPresetPrompt.trim()) return;
     setPresets((previous) => {
       const updated = [...previous];
-      updated[index] = { ...updated[index], name: editingPresetName.trim(), prompt: editingPresetPrompt.trim() };
+      updated[index] = { ...updated[index], name: editingPresetName.trim(), prompt: editingPresetPrompt.trim(), isCustom: true };
       persistPresets(updated);
       return updated;
     });
@@ -110,9 +115,13 @@ export function usePresets(prompt: string, selectedPresetName: string | null) {
   }, [editingPresetIndex, handleCancelEditPreset]);
 
   const handleResetPresets = useCallback(() => {
-    if (!window.confirm('هل أنت متأكد من رغبتك في استعادة قائمة الأنماط الافتراضية وحذف الأنماط المضافة؟')) return;
-    localStorage.removeItem(STORAGE_KEY);
-    setPresets(DEFAULT_PRESETS);
+    if (!window.confirm('سيتم استعادة البرومبتات الافتراضية مع الاحتفاظ بكل البرومبتات المخصصة. هل تريد المتابعة؟')) return;
+    setPresets((previous) => {
+      const customPresets = previous.filter((preset) => preset.isCustom);
+      const restored = [...DEFAULT_PRESETS, ...customPresets];
+      persistPresets(restored);
+      return restored;
+    });
     handleCancelEditPreset();
   }, [handleCancelEditPreset]);
 

@@ -4,9 +4,10 @@ import { requestInpaint } from './api';
 
 const TEST_IMAGE = 'data:image/png;base64,iVBORw0KGgo=';
 
-test('Gemini uses the original JSON transport without resolution or proxy marker', async () => {
+test('Gemini converts managed blob images to the original JSON data-URL transport', async () => {
   const originalFetch = globalThis.fetch;
   let capturedInit: RequestInit | undefined;
+  const uploadedImage = URL.createObjectURL(new Blob(['uploaded-image'], { type: 'image/png' }));
 
   globalThis.fetch = async (input, init) => {
     if (String(input) === '/api/inpaint') {
@@ -21,8 +22,8 @@ test('Gemini uses the original JSON transport without resolution or proxy marker
 
   try {
     const response = await requestInpaint({
-      originalImage: TEST_IMAGE,
-      maskedImage: TEST_IMAGE,
+      originalImage: uploadedImage,
+      maskedImage: uploadedImage,
       prompt: 'Improve it',
       model: 'gemini-3.1-flash-image',
       appMode: 'reimagine',
@@ -39,7 +40,11 @@ test('Gemini uses the original JSON transport without resolution or proxy marker
     const body = JSON.parse(String(capturedInit?.body)) as Record<string, unknown>;
     assert.equal(body.model, 'gemini-3.1-flash-image');
     assert.equal('imageSize' in body, false);
+    assert.match(String(body.maskedImage), /^data:image\/png;base64,/);
+    assert.equal('originalImage' in body, false, 'Gemini should not duplicate the image payload');
+    assert.equal('dalleMaskImage' in body, false, 'Gemini does not consume the OpenAI mask');
   } finally {
+    URL.revokeObjectURL(uploadedImage);
     globalThis.fetch = originalFetch;
   }
 });

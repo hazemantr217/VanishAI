@@ -43,6 +43,26 @@ export async function imageUrlToBlob(url: string): Promise<Blob> {
   return response.blob();
 }
 
+/**
+ * Convert a managed blob URL back to the JSON data-URL shape accepted by the
+ * AI Studio preview proxy and our server validation. Uploaded and generated
+ * images intentionally stay as blob URLs everywhere else to avoid keeping
+ * large Base64 strings in React state.
+ */
+export async function imageUrlToDataUrl(url: string): Promise<string> {
+  if (url.startsWith('data:')) return url;
+
+  const blob = await imageUrlToBlob(url);
+  const bytes = new Uint8Array(await blob.arrayBuffer());
+  const chunkSize = 0x8000;
+  let binary = '';
+  for (let offset = 0; offset < bytes.length; offset += chunkSize) {
+    binary += String.fromCharCode(...bytes.subarray(offset, offset + chunkSize));
+  }
+
+  return `data:${blob.type || imageMimeType(url) || 'image/jpeg'};base64,${btoa(binary)}`;
+}
+
 export async function toManagedImageUrl(url: string): Promise<string> {
   if (!url.startsWith('data:')) return url;
   return createManagedImageUrl(await imageUrlToBlob(url));

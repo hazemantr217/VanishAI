@@ -597,7 +597,7 @@ function CanvasWorkspace({
         <div className="absolute inset-0 flex items-center justify-center border-2 border-dashed border-white/10 rounded-2xl bg-white/5">
           <p className="text-white/50 text-center">
             Upload an image to start<br/>
-            <span className="text-sm">or press Ctrl+V to paste</span>
+            <span className="text-sm">أو اضغط Ctrl+V للصق صورة</span>
           </p>
         </div>
       ) : (

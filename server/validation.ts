@@ -4,6 +4,7 @@ import {
   OPENAI_IMAGE_MODELS,
   SUPPORTED_ASPECT_RATIOS,
   SUPPORTED_IMAGE_SIZES,
+  isOpenAIModel,
   supportsImageSize,
 } from '../src/shared/models';
 
@@ -25,7 +26,9 @@ const similaritySchema = z.enum(['high', 'medium', 'low']).default('high');
 
 export const inpaintRequestSchema = z.object({
   maskedImage: imageDataUrl,
-  originalImage: imageDataUrl,
+  // Gemini only needs the composed image. Keeping the original optional avoids
+  // duplicating a large Base64 payload in AI Studio's JSON preview transport.
+  originalImage: imageDataUrl.optional(),
   dalleMaskImage: imageDataUrl.nullish(),
   prompt: z.string().max(32_000).default(''),
   maskColor: z.string().regex(/^#[0-9A-Fa-f]{6}$/).optional(),
@@ -37,6 +40,13 @@ export const inpaintRequestSchema = z.object({
   outpaintPreserve2D: z.boolean().default(true),
   similarityLevel: similaritySchema,
 }).strict().superRefine((input, context) => {
+  if (isOpenAIModel(input.model) && !input.originalImage) {
+    context.addIssue({
+      code: 'custom',
+      path: ['originalImage'],
+      message: 'الصورة الأصلية مطلوبة عند استخدام OpenAI.',
+    });
+  }
   if (!supportsImageSize(input.model, input.imageSize)) {
     context.addIssue({
       code: 'custom',
@@ -44,7 +54,10 @@ export const inpaintRequestSchema = z.object({
       message: 'الموديل المختار يدعم دقة 1K فقط.',
     });
   }
-});
+}).transform((input) => ({
+  ...input,
+  originalImage: input.originalImage || input.maskedImage,
+}));
 
 export const mergeBatchRequestSchema = z.object({
   images: z.array(imageDataUrl).min(1).max(14),

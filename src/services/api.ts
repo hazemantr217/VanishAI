@@ -5,7 +5,7 @@ import type {
   MergeBatchRequest,
   RuntimeConfig,
 } from '../shared/api';
-import { imageUrlToBlob, toManagedImageUrl } from '../lib/image-urls';
+import { imageUrlToBlob, imageUrlToDataUrl, toManagedImageUrl } from '../lib/image-urls';
 import { isGeminiModel } from '../shared/models';
 
 const SESSION_KEY = 'vanishai_gemini_api_key';
@@ -122,11 +122,21 @@ export async function requestInpaint(
     // Preserve the transport used by the original working AI Studio build.
     // In particular, do not send an image-size field or a custom marker through
     // AI Studio's preview proxy.
-    const { imageSize: _ignoredImageSize, ...originalGeminiPayload } = payload;
+    const {
+      imageSize: _ignoredImageSize,
+      originalImage: _originalImage,
+      dalleMaskImage: _dalleMaskImage,
+      ...originalGeminiPayload
+    } = payload;
+    const maskedImage = await imageUrlToDataUrl(originalGeminiPayload.maskedImage);
+    const jsonPayload = {
+      ...originalGeminiPayload,
+      maskedImage,
+    };
     const response = await apiRequest<ImageResultResponse>('/api/inpaint', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(originalGeminiPayload),
+      body: JSON.stringify(jsonPayload),
       signal,
     }, { includeGeminiKey: true, retryRateLimit: true, requestMarker: false });
     return { ...response, resultImage: await toManagedImageUrl(response.resultImage) };
@@ -157,10 +167,11 @@ export async function requestBatchMerge(
   signal?: AbortSignal,
 ): Promise<ImageResultResponse> {
   const { imageSize: _ignoredImageSize, ...originalPayload } = payload;
+  const images = await Promise.all(originalPayload.images.map(imageUrlToDataUrl));
   const response = await apiRequest<ImageResultResponse>('/api/merge-batch', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(originalPayload),
+    body: JSON.stringify({ ...originalPayload, images }),
     signal,
   }, { includeGeminiKey: true, retryRateLimit: true, requestMarker: false });
   return { ...response, resultImage: await toManagedImageUrl(response.resultImage) };
