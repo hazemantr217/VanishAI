@@ -80,8 +80,9 @@ export default function AppHeader({
 }: AppHeaderProps) {
   return (
     <header className="relative z-20 border-b border-white/10 bg-neutral-950/90 px-3 py-2.5 shadow-xl shadow-black/10 backdrop-blur-2xl md:px-5" dir="rtl">
-      <div className="flex flex-wrap items-center gap-2 lg:flex-nowrap">
-        <div className="order-1 mr-auto flex min-w-fit items-center gap-2" dir="ltr">
+      <div className="flex flex-wrap items-center gap-2.5 lg:flex-nowrap">
+        {/* 1. Logo & Branding (Right side in RTL) */}
+        <div className="flex min-w-fit items-center gap-2" dir="ltr">
           <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-purple-500 via-violet-600 to-blue-600 shadow-lg shadow-purple-500/20">
             <Sparkles className="h-4.5 w-4.5 text-white" />
           </div>
@@ -91,7 +92,60 @@ export default function AppHeader({
           </div>
         </div>
 
-        <div className="order-2 flex rounded-xl border border-white/10 bg-black/40 p-1">
+        {/* 2. Run / Stop Execution Button (Right side next to Logo) */}
+        <div className="flex items-center gap-1.5">
+          <button
+            type="button"
+            onClick={isProcessing ? onStop : onProcess}
+            disabled={!isProcessing && primaryDisabled}
+            className={cn(
+              'flex h-9 min-w-[110px] items-center justify-center gap-1.5 rounded-xl px-4 text-[11px] font-black text-white shadow-lg transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-35',
+              isProcessing
+                ? 'bg-red-600 shadow-red-500/15'
+                : 'bg-gradient-to-r from-purple-600 to-blue-600 shadow-purple-500/20 ring-1 ring-white/20',
+            )}
+            title={isProcessing ? 'إيقاف الطلبات الحالية' : appMode === 'vanish' ? 'تشغيل الصور التي تحتوي على تحديد' : 'تشغيل الدفعة'}
+          >
+            {isProcessing ? <Square className="h-3.5 w-3.5 fill-current" /> : <Sparkles className="h-3.5 w-3.5" />}
+            {isProcessing ? 'إيقاف' : isMergeMode ? 'دمج الصور' : 'تشغيل الكل'}
+          </button>
+        </div>
+
+        {/* 3. Model Selector */}
+        <div className="flex min-w-0 items-center gap-1.5 rounded-xl border border-white/10 bg-white/[0.035] p-1 sm:min-w-[180px] lg:max-w-[260px]">
+          <span className="hidden pr-2 text-[9px] font-bold text-neutral-500 md:block">الموديل</span>
+          <select
+            value={selectedModel}
+            onChange={(event) => onModelChange(event.target.value as ImageModel)}
+            className="h-8 min-w-0 flex-1 rounded-lg border border-transparent bg-neutral-900 px-2 text-[11px] font-bold text-white outline-none transition hover:border-white/10 focus:border-purple-500"
+            dir="ltr"
+          >
+            <option value="gemini-3.1-flash-lite-image">🍌 Nano Banana 2 Lite</option>
+            <option value="gemini-3.1-flash-image">🍌 Nano Banana 2</option>
+            {openaiAvailable && (
+              <optgroup label="OpenAI — خارج AI Studio">
+                <option value="gpt-image-1.5">GPT Image 1.5</option>
+                <option value="gpt-image-2">GPT Image 2</option>
+              </optgroup>
+            )}
+          </select>
+          {openaiAvailable && isOpenAIModel(selectedModel) && (
+            <select
+              value={imageSize}
+              onChange={(event) => onImageSizeChange(event.target.value as ImageSize)}
+              className="h-8 rounded-lg border border-white/10 bg-neutral-900 px-2 text-[10px] font-bold text-white outline-none focus:border-purple-500"
+              title="جودة OpenAI فقط"
+            >
+              {imageSizesForModel(selectedModel).map((size) => <option key={size} value={size}>{size}</option>)}
+            </select>
+          )}
+        </div>
+
+        {/* Spacer to push Vanish/Batch toggle and tools to the Left in RTL */}
+        <div className="hidden flex-1 lg:block" />
+
+        {/* 4. Vanish / Batch Mode Toggle (Shifted to Left) */}
+        <div className="flex rounded-xl border border-white/10 bg-black/40 p-1">
           <button
             type="button"
             onClick={() => onModeChange('vanish')}
@@ -114,65 +168,8 @@ export default function AppHeader({
           </button>
         </div>
 
-        <div className="order-4 flex min-w-0 flex-1 items-center gap-1.5 rounded-xl border border-white/10 bg-white/[0.035] p-1 sm:order-3 sm:min-w-[230px] lg:max-w-[330px]">
-          <span className="hidden pr-2 text-[9px] font-bold text-neutral-500 md:block">الموديل</span>
-          <select
-            value={selectedModel}
-            onChange={(event) => onModelChange(event.target.value as ImageModel)}
-            className="h-8 min-w-0 flex-1 rounded-lg border border-transparent bg-neutral-900 px-2 text-[11px] font-bold text-white outline-none transition hover:border-white/10 focus:border-purple-500"
-            dir="ltr"
-          >
-            <option value="gemini-3.1-flash-lite-image">🍌 Nano Banana 2 Lite</option>
-            <option value="gemini-3.1-flash-image">🍌 Nano Banana 2</option>
-            {openaiAvailable && (
-              <optgroup label="OpenAI — خارج AI Studio">
-                <option value="gpt-image-1.5">GPT Image 1.5</option>
-                <option value="gpt-image-2">GPT Image 2</option>
-              </optgroup>
-            )}
-          </select>
-          {isOpenAIModel(selectedModel) && (
-            <select
-              value={imageSize}
-              onChange={(event) => onImageSizeChange(event.target.value as ImageSize)}
-              className="h-8 rounded-lg border border-white/10 bg-neutral-900 px-2 text-[10px] font-bold text-white outline-none focus:border-purple-500"
-              title="جودة OpenAI فقط"
-            >
-              {imageSizesForModel(selectedModel).map((size) => <option key={size} value={size}>{size}</option>)}
-            </select>
-          )}
-        </div>
-
-        <div className="order-3 flex items-center gap-1.5 sm:order-4">
-          {requiresUserApiKey && (
-            <button
-              type="button"
-              onClick={onManageApiKey}
-              className={cn(secondaryButton, hasUserApiKey ? 'text-emerald-300' : 'border-amber-500/30 text-amber-300')}
-              title="مفتاح Gemini لهذه الجلسة"
-            >
-              <KeyRound className="h-3.5 w-3.5" />
-              <span className="hidden xl:inline">{hasUserApiKey ? 'المفتاح متصل' : 'أضف المفتاح'}</span>
-            </button>
-          )}
-          <button
-            type="button"
-            onClick={isProcessing ? onStop : onProcess}
-            disabled={!isProcessing && primaryDisabled}
-            className={cn(
-              'flex h-9 min-w-[94px] items-center justify-center gap-1.5 rounded-xl px-3 text-[11px] font-black text-white shadow-lg transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-35',
-              isProcessing
-                ? 'bg-red-600 shadow-red-500/15'
-                : 'bg-gradient-to-r from-purple-600 to-blue-600 shadow-purple-500/20',
-            )}
-            title={isProcessing ? 'إيقاف الطلبات الحالية' : appMode === 'vanish' ? 'تشغيل الصور التي تحتوي على تحديد' : 'تشغيل الدفعة'}
-          >
-            {isProcessing ? <Square className="h-3.5 w-3.5 fill-current" /> : <Sparkles className="h-3.5 w-3.5" />}
-            {isProcessing ? 'إيقاف' : isMergeMode ? 'دمج الصور' : 'تشغيل الكل'}
-          </button>
-        </div>
-
-        <div className="order-5 flex w-full items-center gap-1.5 overflow-x-auto border-t border-white/5 pt-2 lg:w-auto lg:border-0 lg:pt-0">
+        {/* 5. Tool Actions (Far Left in RTL) */}
+        <div className="flex w-full items-center gap-1.5 overflow-x-auto border-t border-white/5 pt-2 lg:w-auto lg:border-0 lg:pt-0">
           <input ref={fileInputRef} type="file" multiple accept="image/png,image/jpeg,image/webp" className="hidden" onChange={onFileUpload} />
           <button type="button" onClick={onDownloadActive} disabled={!hasActiveItem} className={secondaryButton} title="تنزيل الصورة الحالية">
             <Download className="h-3.5 w-3.5 text-blue-300" /><span className="hidden 2xl:inline">تنزيل</span>

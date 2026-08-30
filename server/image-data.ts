@@ -38,18 +38,31 @@ export function extractGenerateContentImage(response: {
     content?: {
       parts?: Array<{
         inlineData?: { data?: string; mimeType?: string };
+        text?: string;
       }>;
     };
   }>;
 }): string {
   let image: { data?: string; mimeType?: string } | undefined;
+  let modelText: string | undefined;
+
   for (const candidate of response.candidates || []) {
     for (const part of candidate.content?.parts || []) {
-      if (part.inlineData?.data) image = part.inlineData;
+      if (part.inlineData?.data) {
+        image = part.inlineData;
+        break;
+      }
+      if (part.text) {
+        modelText = part.text;
+      }
     }
+    if (image?.data) break;
   }
 
   if (!image?.data) {
+    if (modelText) {
+      throw new ApiError(422, `لم يُرجع الموديل صورة صالحة: ${modelText.slice(0, 150)}`, 'NO_IMAGE_RESULT');
+    }
     throw new ApiError(422, 'لم يُرجع الموديل صورة صالحة.', 'NO_IMAGE_RESULT');
   }
   return `data:${image.mimeType || 'image/png'};base64,${image.data}`;

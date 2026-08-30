@@ -36,19 +36,19 @@ export function isAccessDeniedError(error: unknown): boolean {
     if (status === 403) return true;
   }
   const value = error instanceof Error ? `${error.name} ${error.message}` : String(error);
-  return /(?:permission.?denied|access.?denied|billing|paid tier|not available.*free tier)/i.test(value);
+  return /(?:403|permission.?denied|access.?denied|billing|paid tier|not available.*free tier)/i.test(value);
 }
 
 export function publicErrorMessage(error: unknown): string {
   if (error instanceof ApiError) return error.message;
   if (isAuthenticationError(error)) {
-    return 'مفتاح API غير صالح أو لا يملك صلاحية استخدام الموديل المختار.';
+    return 'مفتاح API غير صالح أو غير مصرح له باستخدام الموديل.';
   }
   if (isAccessDeniedError(error)) {
-    return 'رفض Google الطلب (403). تحقق من صلاحية المفتاح لاستخدام الموديل المختار ثم أعد المحاولة.';
+    return 'فشل الطلب (403): يتطلب توليد الصور عبر Gemini تفعيل الفوترة أو ربط مفتاح مشروع مدفوع لموديلات الصور.';
   }
   if (isQuotaError(error)) {
-    return 'تم تجاوز حصة الاستخدام أو حد سرعة الطلبات. جرّب لاحقًا أو استخدم مفتاحًا له حصة متاحة.';
+    return 'تم تجاوز حصة الاستخدام أو حد سرعة الطلبات. يرجى الانتظار قليلاً ثم إعادة المحاولة.';
   }
-  return 'فشلت معالجة الصورة. تحقق من المفتاح والموديل ثم أعد المحاولة.';
+  return 'فشلت معالجة الصورة. يرجى التحقق من المدخلات ثم إعادة المحاولة.';
 }

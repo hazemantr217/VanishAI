@@ -29,7 +29,7 @@ function multipartOnly(middleware: ReturnType<typeof upload.fields>) {
       return;
     }
 
-    middleware(req, res, (error: unknown) => {
+    middleware(req as any, res as any, (error: unknown) => {
       if (error instanceof multer.MulterError) {
         const tooLarge = error.code === 'LIMIT_FILE_SIZE';
         next(new ApiError(

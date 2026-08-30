@@ -16,7 +16,6 @@ function createClient(apiKey: string): GoogleGenAI {
     apiKey,
     httpOptions: {
       headers: {
-        // Keep the exact header used by the original working AI Studio build.
         'User-Agent': 'aistudio-build',
       },
     },
@@ -33,12 +32,18 @@ export function generateContentConfig(
       ? 0.5
       : 1;
 
+  let imageConfig: { aspectRatio?: string } | undefined = undefined;
+  if (input.aspectRatio && input.aspectRatio !== 'original') {
+    const validRatios = ['1:1', '3:4', '4:3', '9:16', '16:9', '1:4', '1:8', '4:1', '8:1'];
+    if (validRatios.includes(input.aspectRatio)) {
+      imageConfig = { aspectRatio: input.aspectRatio };
+    }
+  }
+
   return {
     ...(signal ? { abortSignal: signal } : {}),
     temperature,
-    ...(input.aspectRatio === 'original'
-      ? {}
-      : { imageConfig: { aspectRatio: input.aspectRatio } }),
+    ...(imageConfig ? { imageConfig } : {}),
   };
 }
 
@@ -62,7 +67,7 @@ export async function editWithGemini(
 
   const response = await ai.models.generateContent({
     model: input.model,
-    contents: { parts },
+    contents: parts,
     config: generateContentConfig(input, signal),
   });
 
@@ -89,7 +94,7 @@ export async function mergeWithGemini(
 
   const response = await ai.models.generateContent({
     model: input.model,
-    contents: { parts },
+    contents: parts,
     config: generateContentConfig(input, signal),
   });
 
