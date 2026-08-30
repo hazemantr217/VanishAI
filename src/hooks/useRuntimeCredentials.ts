@@ -11,7 +11,6 @@ const FALLBACK_RUNTIME_CONFIG: RuntimeConfig = {
   geminiCredentialMode: 'byok',
   googleOnlyMode: false,
   openaiAvailable: false,
-  geminiImageBillingRequired: true,
   maxBatchConcurrency: 2,
 };
 

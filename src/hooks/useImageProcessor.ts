@@ -43,7 +43,7 @@ function processingErrorMessage(error: unknown, merge = false): string {
   }`.toLowerCase();
   const quotaError = ['429', 'quota', 'resource_exhausted', 'exceeded'].some((token) => serialized.includes(token));
   if (!quotaError) return message;
-  return 'تجاوزت حصة Google المتاحة. موديلات Gemini للصور تحتاج مشروعًا مدفوعًا ومفعّلًا عليه Billing وحصة متاحة.';
+  return 'تجاوزت حصة Google المتاحة لهذا المفتاح. انتظر تجدد الحصة أو استخدم مفتاحًا آخر.';
 }
 
 export function useImageProcessor(options: ImageProcessorOptions) {

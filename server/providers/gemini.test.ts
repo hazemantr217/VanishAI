@@ -4,14 +4,15 @@ import { editWithGemini, generateContentConfig } from './gemini';
 
 const TEST_IMAGE = 'data:image/png;base64,aGVsbG8=';
 
-test('Gemini uses generateContent and only sends an explicit non-default size', async () => {
+test('Gemini restores the original AI Studio generateContent request shape', async () => {
   const originalFetch = globalThis.fetch;
-  const requests: Array<{ url: string; body: Record<string, unknown> }> = [];
+  const requests: Array<{ url: string; body: Record<string, unknown>; headers: Headers }> = [];
 
   globalThis.fetch = async (input, init) => {
     requests.push({
       url: String(input),
       body: JSON.parse(String(init?.body || '{}')) as Record<string, unknown>,
+      headers: new Headers(init?.headers),
     });
     return new Response(JSON.stringify({
       candidates: [{
@@ -57,6 +58,7 @@ test('Gemini uses generateContent and only sends an explicit non-default size', 
     assert.equal(requests.length, 2);
 
     assert.match(requests[0].url, /models\/gemini-3\.1-flash-lite-image:generateContent/);
+    assert.equal(requests[0].headers.get('user-agent'), 'aistudio-build');
     const liteConfig = requests[0].body.generationConfig as Record<string, unknown>;
     assert.equal(liteConfig.temperature, 0.15);
     assert.equal('imageConfig' in liteConfig, false);
@@ -66,18 +68,19 @@ test('Gemini uses generateContent and only sends an explicit non-default size', 
     assert.equal(flashConfig.temperature, 0.5);
     assert.deepEqual(flashConfig.imageConfig, {
       aspectRatio: '16:9',
-      imageSize: '2K',
     });
+    const flashParts = ((requests[1].body.contents as Array<{ parts: unknown[] }>)[0]).parts;
+    assert.equal(flashParts.length, 2, 'one image plus one prompt should be sent');
+    assert.equal(JSON.stringify(requests[1].body).includes('imageSize'), false);
   } finally {
     globalThis.fetch = originalFetch;
   }
 });
 
-test('keeps the original AI Studio request shape for default 1K output', () => {
+test('keeps the original AI Studio request shape for native output', () => {
   const signal = new AbortController().signal;
   const config = generateContentConfig({
     aspectRatio: 'original',
-    imageSize: '1K',
     similarityLevel: 'high',
   }, signal);
 
@@ -86,27 +89,24 @@ test('keeps the original AI Studio request shape for default 1K output', () => {
   assert.equal('imageConfig' in config, false);
 });
 
-test('adds resolution only when a non-default Flash size is selected', () => {
+test('adds only an aspect ratio when one is selected', () => {
   const config = generateContentConfig({
     aspectRatio: '16:9',
-    imageSize: '2K',
     similarityLevel: 'medium',
   });
 
   assert.deepEqual(config.imageConfig, {
     aspectRatio: '16:9',
-    imageSize: '2K',
   });
   assert.equal(config.temperature, 0.5);
 });
 
-test('can request the original ratio at 4K without forcing a new ratio', () => {
+test('does not create imageConfig when the original ratio is selected', () => {
   const config = generateContentConfig({
     aspectRatio: 'original',
-    imageSize: '4K',
     similarityLevel: 'low',
   });
 
-  assert.deepEqual(config.imageConfig, { imageSize: '4K' });
+  assert.equal('imageConfig' in config, false);
   assert.equal(config.temperature, 1);
 });

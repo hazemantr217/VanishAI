@@ -16,22 +16,17 @@ function createClient(apiKey: string): GoogleGenAI {
     apiKey,
     httpOptions: {
       headers: {
-        'User-Agent': 'vanish-ai/1.0 aistudio-build',
+        // Keep the exact header used by the original working AI Studio build.
+        'User-Agent': 'aistudio-build',
       },
     },
   });
 }
 
 export function generateContentConfig(
-  input: Pick<InpaintInput, 'aspectRatio' | 'imageSize' | 'similarityLevel'>,
+  input: Pick<InpaintInput, 'aspectRatio' | 'similarityLevel'>,
   signal?: AbortSignal,
 ) {
-  const imageConfig = {
-    ...(input.aspectRatio === 'original' ? {} : { aspectRatio: input.aspectRatio }),
-    // 1K is Gemini's default. Omitting it preserves the exact request shape
-    // used by the original AI Studio implementation and keeps Lite compatible.
-    ...(input.imageSize === '1K' ? {} : { imageSize: input.imageSize }),
-  };
   const temperature = input.similarityLevel === 'high'
     ? 0.15
     : input.similarityLevel === 'medium'
@@ -41,7 +36,9 @@ export function generateContentConfig(
   return {
     ...(signal ? { abortSignal: signal } : {}),
     temperature,
-    ...(Object.keys(imageConfig).length > 0 ? { imageConfig } : {}),
+    ...(input.aspectRatio === 'original'
+      ? {}
+      : { imageConfig: { aspectRatio: input.aspectRatio } }),
   };
 }
 
@@ -51,25 +48,15 @@ export async function editWithGemini(
   signal: AbortSignal,
 ): Promise<string> {
   const ai = createClient(apiKey);
-  const original = parseImageDataUrl(input.originalImage);
   const masked = parseImageDataUrl(input.maskedImage);
-  const hasSeparateMaskReference = input.maskedImage !== input.originalImage;
 
   const parts: GenerateContentPart[] = [
     {
       inlineData: {
-        data: original.base64,
-        mimeType: original.mimeType,
+        data: masked.base64,
+        mimeType: masked.mimeType,
       },
     },
-    ...(hasSeparateMaskReference
-      ? [{
-          inlineData: {
-            data: masked.base64,
-            mimeType: masked.mimeType,
-          },
-        }]
-      : []),
     { text: buildImageEditPrompt(input) },
   ];
 

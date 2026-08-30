@@ -12,7 +12,7 @@ import { cn } from './lib/utils';
 import { v4 as uuidv4 } from 'uuid';
 import type { BatchItem } from './types';
 import type { AspectRatio, ImageModel, ImageSize } from './shared/models';
-import { GEMINI_IMAGE_MODELS, imageSizesForModel, isSupportedAspectRatio, supportsImageSize } from './shared/models';
+import { GEMINI_IMAGE_MODELS, imageSizesForModel, isOpenAIModel, isSupportedAspectRatio, supportsImageSize } from './shared/models';
 import { filesToBatchItems, filenameForDataUrl } from './lib/images';
 import { acceptItemResult, applyImageEdit, redoItem, undoItem } from './lib/items';
 import { useManagedImageLifecycle } from './hooks/useManagedImageLifecycle';
@@ -73,7 +73,9 @@ export default function App() {
     localStorage.setItem('vanishai_image_size', imageSize);
   }, [imageSize]);
   useEffect(() => {
-    if (!supportsImageSize(selectedModel, imageSize)) setImageSize('1K');
+    // Gemini keeps its native/default output like the original AI Studio build.
+    // Resolution selection remains available only for external OpenAI models.
+    if (!isOpenAIModel(selectedModel) || !supportsImageSize(selectedModel, imageSize)) setImageSize('1K');
   }, [selectedModel, imageSize]);
   const [enableOutpainting, setEnableOutpainting] = useState(false);
   const [outpaintPreserve2D, setOutpaintPreserve2D] = useState(true);
@@ -757,8 +759,8 @@ export default function App() {
             onChange={(e) => setSelectedModel(e.target.value as ImageModel)}
             className="bg-neutral-950 border border-neutral-800 hover:border-neutral-700 text-white text-[10px] md:text-xs rounded-lg px-2 py-1 md:px-2.5 md:py-1.5 outline-none focus:border-purple-500 transition-all font-sans cursor-pointer min-w-[130px] sm:min-w-[170px]"
           >
-            <option value="gemini-3.1-flash-lite-image">🍌 Nano Banana 2 Lite · Paid · 1K</option>
-            <option value="gemini-3.1-flash-image">🍌 Nano Banana 2 · Paid</option>
+            <option value="gemini-3.1-flash-lite-image">🍌 Nano Banana 2 Lite</option>
+            <option value="gemini-3.1-flash-image">🍌 Nano Banana 2</option>
             {runtimeConfig?.openaiAvailable && (
               <optgroup label="OpenAI">
                 <option value="gpt-image-1.5">OpenAI GPT Image 1.5</option>
@@ -766,16 +768,18 @@ export default function App() {
               </optgroup>
             )}
           </select>
-          <select
-            value={imageSize}
-            onChange={(event) => setImageSize(event.target.value as ImageSize)}
-            className="rounded-lg border border-neutral-800 bg-neutral-950 px-2 py-1 text-[10px] text-white outline-none transition hover:border-neutral-700 focus:border-purple-500"
-            title="دقة الصورة الناتجة"
-          >
-            {imageSizesForModel(selectedModel).map((size) => (
-              <option key={size} value={size}>{size}</option>
-            ))}
-          </select>
+          {isOpenAIModel(selectedModel) && (
+            <select
+              value={imageSize}
+              onChange={(event) => setImageSize(event.target.value as ImageSize)}
+              className="rounded-lg border border-neutral-800 bg-neutral-950 px-2 py-1 text-[10px] text-white outline-none transition hover:border-neutral-700 focus:border-purple-500"
+              title="دقة صورة OpenAI الناتجة"
+            >
+              {imageSizesForModel(selectedModel).map((size) => (
+                <option key={size} value={size}>{size}</option>
+              ))}
+            </select>
+          )}
         </div>
 
         <div className="flex items-center justify-between md:justify-end gap-2 w-full md:w-auto mt-1 md:mt-0">
@@ -885,12 +889,6 @@ export default function App() {
           </div>
         </div>
       </header>
-
-      {runtimeConfig?.geminiCredentialMode === 'managed' && runtimeConfig.geminiImageBillingRequired && (
-        <div className="border-b border-amber-500/20 bg-amber-500/10 px-4 py-1.5 text-center text-[10px] font-bold text-amber-200" dir="rtl">
-          مفتاح AI Studio متصل تلقائيًا، لكن توليد الصور يحتاج مشروع Google مدفوعًا ومفعّلًا عليه Billing؛ Lite يدعم 1K فقط وFlash يدعم 1K/2K/4K.
-        </div>
-      )}
 
       <div className="flex-1 flex flex-col lg:flex-row overflow-hidden relative">
         {/* Toolbar */}
@@ -1439,8 +1437,8 @@ export default function App() {
                         💡 <strong>حصة الموديل غير متاحة حاليًا:</strong>
                         <p className="mt-1 font-sans">
                           {requiresUserApiKey
-                            ? 'استخدم مفتاحًا آخر له حصة متاحة أو فعّل Billing على مشروع المفتاح الحالي.'
-                            : 'انتظر تجدد الحصة أو اضبط مفتاح AI Studio الافتراضي على مشروع به Billing وحصة متاحة.'}
+                            ? 'استخدم مفتاحًا آخر له حصة متاحة أو انتظر تجدد الحصة.'
+                            : 'انتظر تجدد حصة مفتاح AI Studio الافتراضي ثم أعد المحاولة.'}
                         </p>
                         {requiresUserApiKey && (
                           <div className="mt-2.5 flex justify-start">

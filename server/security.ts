@@ -59,6 +59,14 @@ export function enforceSameOrigin(req: Request, res: Response, next: NextFunctio
     return;
   }
 
+  // AI Studio's original working transport posts JSON through its preview
+  // proxy. JSON is already protected from cross-site form submissions by the
+  // browser's CORS preflight, so it does not need our custom request marker.
+  if (req.is('application/json')) {
+    next();
+    return;
+  }
+
   if (req.header('x-vanish-request') !== '1') {
     res.status(403).json({
       error: 'تحقق الطلب الأمني مفقود.',

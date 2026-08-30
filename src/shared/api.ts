@@ -6,7 +6,6 @@ export interface RuntimeConfig {
   geminiCredentialMode: CredentialMode;
   googleOnlyMode: boolean;
   openaiAvailable: boolean;
-  geminiImageBillingRequired: boolean;
   maxBatchConcurrency: number;
 }
 

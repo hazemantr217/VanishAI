@@ -34,9 +34,9 @@ Leave `GEMINI_API_KEY` unset for the default per-user BYOK flow. To test a manag
 3. AI Studio supplies `GEMINI_API_KEY` to the Node.js server automatically.
 4. Run the app. The runtime-config endpoint detects the managed secret, so the key dialog stays hidden.
 
-OpenAI choices are deliberately hidden in this managed Google mode. Gemini image generation is not available on Google's Free Tier: the AI Studio project's Billing/Paid Tier must be enabled even though the key itself is injected automatically. Nano Banana 2 Lite supports `1K` only; Nano Banana 2 Flash supports `1K`, `2K`, and `4K`. Google exposes no `3K` output option for these models.
+OpenAI choices are deliberately hidden in this managed Google mode. Gemini uses the model's native output settings, matching the original AI Studio app; the UI does not send a `1K`/`2K`/`4K` override to Google models.
 
-All Gemini calls remain under `server/providers/gemini.ts`. Do not move provider calls or secrets into `src/`. A provider `403` is returned to the UI as a clear Billing/model-access error rather than a generic generation failure.
+All Gemini calls remain under `server/providers/gemini.ts`. Do not move provider calls or secrets into `src/`. AI Studio uses its managed server-side `GEMINI_API_KEY`; standalone copies ask the user for a Gemini key when no managed server key exists.
 
 ## Production
 

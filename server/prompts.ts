@@ -28,7 +28,7 @@ export function buildImageEditPrompt(input: InpaintInput): string {
 
     if (input.maskColor) {
       return `LOCALIZED HIGH-FIDELITY IMAGE EDIT.
-Image 1 is the immutable original reference. Image 2 shows the requested edit region painted ${colorName}.
+The supplied image shows the requested edit region painted ${colorName}.
 Apply this instruction only inside the painted region: "${change}"
 Preserve every pixel-level visual fact outside that region: identity, facial features, expression, pose, body proportions, clothing, logos, readable text, product geometry, composition, perspective, colors, skin texture, and lighting direction. Do not beautify, reshape, move, crop, or redesign anything outside the marked region. Remove every trace of the paint and blend the edited boundary naturally. ${aspectInstruction(input.aspectRatio)}`;
     }
@@ -46,7 +46,7 @@ Preserve the same people and identity, facial structure and expression, pose, bo
       : '';
 
     return `PRECISE OUTPAINTING TASK.
-Image 1 is the immutable original. Image 2 marks the extension area in ${colorName}.
+The supplied image marks the extension area in ${colorName}.
 Generate content only in that marked area using this direction: "${guide}"
 Continue existing edges, patterns, perspective, and lighting across the boundary. Do not alter any unmarked content. Remove the ${colorName} overlay completely. ${flatArtworkRule} ${aspectInstruction(input.aspectRatio)}`;
   }
@@ -55,7 +55,7 @@ Continue existing edges, patterns, perspective, and lighting across the boundary
     'Remove the covered object and reconstruct the background naturally from the surrounding context.';
 
   return `STRICT LOCAL INPAINTING TASK.
-Image 1 is the immutable original reference. Image 2 is the same image with the edit region painted ${colorName}.
+The supplied image contains the edit region painted ${colorName}.
 Perform only this change inside the painted region: "${change}"
 Do not modify anything outside the painted region. Preserve exact identity, face, expression, pose, body proportions, clothing, hands, hair, logos, readable text, product shape, composition, crop, perspective, colors, lighting, film grain, and skin texture outside the selection. Reconstruct realistic detail inside the selection, remove all ${colorName} paint, and create a seamless boundary without halos or blur. ${aspectInstruction(input.aspectRatio)}`;
 }

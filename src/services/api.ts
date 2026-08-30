@@ -6,6 +6,7 @@ import type {
   RuntimeConfig,
 } from '../shared/api';
 import { imageUrlToBlob, toManagedImageUrl } from '../lib/image-urls';
+import { isGeminiModel } from '../shared/models';
 
 const SESSION_KEY = 'vanishai_gemini_api_key';
 let inMemoryGeminiApiKey = '';
@@ -72,11 +73,11 @@ function abortableDelay(milliseconds: number, signal?: AbortSignal): Promise<voi
 async function apiRequest<T>(
   path: string,
   init: RequestInit,
-  options: { includeGeminiKey?: boolean; retryRateLimit?: boolean } = {},
+  options: { includeGeminiKey?: boolean; retryRateLimit?: boolean; requestMarker?: boolean } = {},
 ): Promise<T> {
   const headers = new Headers(init.headers);
   headers.set('Accept', 'application/json');
-  headers.set('X-Vanish-Request', '1');
+  if (options.requestMarker !== false) headers.set('X-Vanish-Request', '1');
 
   if (options.includeGeminiKey) {
     const apiKey = readSessionKey();
@@ -117,6 +118,20 @@ export async function requestInpaint(
   payload: InpaintRequest,
   signal?: AbortSignal,
 ): Promise<ImageResultResponse> {
+  if (isGeminiModel(payload.model)) {
+    // Preserve the transport used by the original working AI Studio build.
+    // In particular, do not send an image-size field or a custom marker through
+    // AI Studio's preview proxy.
+    const { imageSize: _ignoredImageSize, ...originalGeminiPayload } = payload;
+    const response = await apiRequest<ImageResultResponse>('/api/inpaint', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(originalGeminiPayload),
+      signal,
+    }, { includeGeminiKey: true, retryRateLimit: true, requestMarker: false });
+    return { ...response, resultImage: await toManagedImageUrl(response.resultImage) };
+  }
+
   const { originalImage, maskedImage, dalleMaskImage, ...metadata } = payload;
   const formData = new FormData();
   formData.set('metadata', JSON.stringify(metadata));
@@ -141,19 +156,13 @@ export async function requestBatchMerge(
   payload: MergeBatchRequest,
   signal?: AbortSignal,
 ): Promise<ImageResultResponse> {
-  const { images, ...metadata } = payload;
-  const formData = new FormData();
-  formData.set('metadata', JSON.stringify(metadata));
-  const blobs = await Promise.all(images.map(imageUrlToBlob));
-  blobs.forEach((blob, index) => {
-    formData.append('images', blob, filenameForBlob(`image-${index + 1}`, blob));
-  });
-
+  const { imageSize: _ignoredImageSize, ...originalPayload } = payload;
   const response = await apiRequest<ImageResultResponse>('/api/merge-batch', {
     method: 'POST',
-    body: formData,
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(originalPayload),
     signal,
-  }, { includeGeminiKey: true, retryRateLimit: true });
+  }, { includeGeminiKey: true, retryRateLimit: true, requestMarker: false });
   return { ...response, resultImage: await toManagedImageUrl(response.resultImage) };
 }
 

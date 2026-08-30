@@ -29,7 +29,6 @@ apiRouter.get('/runtime-config', (_req, res) => {
     geminiCredentialMode: serverConfig.managedGeminiApiKey ? 'managed' : 'byok',
     googleOnlyMode: isGoogleManagedRuntime(),
     openaiAvailable: isOpenAIEnabled(),
-    geminiImageBillingRequired: true,
     maxBatchConcurrency: serverConfig.maxBatchConcurrency,
   });
 });

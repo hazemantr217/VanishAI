@@ -33,22 +33,22 @@ test('health and runtime config expose no credentials', async () => {
     assert.equal(config.geminiCredentialMode, 'byok');
     assert.equal(config.googleOnlyMode, false);
     assert.equal(config.openaiAvailable, false);
-    assert.equal(config.geminiImageBillingRequired, true);
     assert.equal(typeof config.maxBatchConcurrency, 'number');
     assert.equal(JSON.stringify(config).includes('API_KEY'), false);
   });
 });
 
-test('mutating API routes reject cross-origin requests', async () => {
+test('multipart API routes reject cross-origin requests', async () => {
   await withTestServer(async (baseUrl) => {
+    const formData = new FormData();
+    formData.set('metadata', '{}');
     const response = await fetch(`${baseUrl}/api/inpaint`, {
       method: 'POST',
       headers: {
-        'content-type': 'application/json',
         origin: 'https://attacker.example',
         'x-vanish-request': '1',
       },
-      body: '{}',
+      body: formData,
     });
 
     assert.equal(response.status, 403);
@@ -58,14 +58,28 @@ test('mutating API routes reject cross-origin requests', async () => {
 
 test('AI Studio forwarded preview host passes the same-origin guard', async () => {
   await withTestServer(async (baseUrl) => {
+    const formData = new FormData();
+    formData.set('metadata', '{}');
     const response = await fetch(`${baseUrl}/api/inpaint`, {
       method: 'POST',
       headers: {
-        'content-type': 'application/json',
         origin: 'https://preview.example',
         'x-forwarded-host': 'preview.example',
         'x-vanish-request': '1',
       },
+      body: formData,
+    });
+
+    assert.equal(response.status, 400);
+    assert.equal((await response.json() as { code: string }).code, 'INVALID_REQUEST');
+  });
+});
+
+test('legacy AI Studio JSON transport does not require a custom request marker', async () => {
+  await withTestServer(async (baseUrl) => {
+    const response = await fetch(`${baseUrl}/api/inpaint`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
       body: '{}',
     });
 
