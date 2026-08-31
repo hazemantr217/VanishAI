@@ -1,6 +1,9 @@
 # VanishAI
 
-VanishAI is a full-stack React and Node.js image editor for precise object removal, masked edits, outpainting, high-fidelity recreation, and bounded-concurrency batch processing. Gemini and OpenAI calls run on the server; provider SDKs and managed secrets are never shipped in the browser bundle.
+> [!IMPORTANT]
+> **Before making any change, read [`AGENTS.md`](./AGENTS.md) completely.** It records the known-good Google AI Studio architecture, the failures that previously caused `401/403/429`, and the mandatory regression checks. Do not refactor Gemini authentication or transport before understanding that contract.
+
+VanishAI is a full-stack React and Node.js image editor for precise object removal, masked edits, outpainting, high-fidelity recreation, and bounded-concurrency batch processing. Google AI Studio Preview intentionally uses a Stable-compatible direct browser Gemini path; published/standalone deployments use the backend provider path.
 
 ## Credential modes
 
@@ -37,7 +40,7 @@ Leave `GEMINI_API_KEY` unset for the default per-user BYOK flow. To test a manag
 
 OpenAI choices are deliberately hidden in this managed Google mode. Gemini uses the model's native output settings, matching the original AI Studio app; the UI does not send a `1K`/`2K`/`4K` override to Google models.
 
-All Gemini calls remain under `server/providers/gemini.ts`. Do not move provider calls or secrets into `src/`. AI Studio uses its managed server-side `GEMINI_API_KEY`; standalone copies ask the user for a Gemini key when no managed server key exists.
+The two Gemini transports are intentional: `src/services/gemini-preview.ts` is the development-only AI Studio Preview compatibility path, while `server/providers/gemini.ts` serves production and standalone deployments. Do not collapse them into a single backend path; doing so previously made Preview use the wrong project/quota and return `401/403/429`. See [`AGENTS.md`](./AGENTS.md) before changing either path.
 
 ## Production
 
@@ -68,16 +71,17 @@ npm run verify:bundle
 npm audit
 ```
 
-`npm run check` runs the first four commands. Bundle verification fails if Gemini server SDK code or secret identifiers enter a browser asset. CI repeats these checks on every change to `main`.
+`npm run check` runs the first four commands. Bundle verification fails if a real-looking Gemini credential enters a production browser asset. The browser SDK itself is intentional in the AI Studio Preview compatibility chunk. CI repeats these checks on every change to `main`.
 
 ## Architecture
 
 - `src/components/CanvasWorkspace.tsx`: independent full-resolution mask layer, undo/redo, eraser, and worker-backed magic wand.
 - `src/hooks/`: isolated runtime credentials, image processing, presets, persistence, and managed image-URL lifecycles.
-- `src/services/api.ts`: same-origin API client and session-scoped BYOK handling.
+- `src/services/gemini-preview.ts`: direct Gemini transport used only by Google AI Studio Preview/development.
+- `src/services/api.ts`: selects the direct Preview transport first, otherwise uses the same-origin API and session-scoped BYOK handling.
 - `src/lib/db.ts`: content-addressed Blob storage in IndexedDB with coalesced writes, deduplication, and bounded garbage collection.
 - `server/api-router.ts`: validated API routes and sanitized errors.
-- `server/providers/`: isolated Gemini and true OpenAI `images.edit` implementations.
+- `server/providers/`: production/standalone Gemini and true OpenAI `images.edit` implementations.
 - `src/shared/`: request and model contracts shared by browser and server.
 
 Generated results are composited back only inside the selected mask in Vanish mode, preserving original pixels outside it.
