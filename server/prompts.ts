@@ -1,8 +1,16 @@
-import type { z } from 'zod';
-import type { inpaintRequestSchema, mergeBatchRequestSchema } from './validation';
+export interface ImageEditPromptInput {
+  prompt: string;
+  maskColor?: string;
+  appMode: 'vanish' | 'reimagine';
+  aspectRatio: string;
+  enableOutpainting: boolean;
+  outpaintPreserve2D: boolean;
+}
 
-type InpaintInput = z.infer<typeof inpaintRequestSchema>;
-type MergeInput = z.infer<typeof mergeBatchRequestSchema>;
+export interface MergePromptInput {
+  prompt: string;
+  aspectRatio: string;
+}
 
 const MASK_COLOR_NAMES: Record<string, string> = {
   '#00FF00': 'bright green',
@@ -18,7 +26,7 @@ function aspectInstruction(aspectRatio: string): string {
     : `Render the final image at exactly ${aspectRatio}.`;
 }
 
-export function buildImageEditPrompt(input: InpaintInput): string {
+export function buildImageEditPrompt(input: ImageEditPromptInput): string {
   const userPrompt = input.prompt.trim();
   const colorName = MASK_COLOR_NAMES[input.maskColor || ''] || input.maskColor || 'marked';
 
@@ -60,7 +68,7 @@ Perform only this change inside the painted region: "${change}"
 Do not modify anything outside the painted region. Preserve exact identity, face, expression, pose, body proportions, clothing, hands, hair, logos, readable text, product shape, composition, crop, perspective, colors, lighting, film grain, and skin texture outside the selection. Reconstruct realistic detail inside the selection, remove all ${colorName} paint, and create a seamless boundary without halos or blur. ${aspectInstruction(input.aspectRatio)}`;
 }
 
-export function buildMergePrompt(input: MergeInput): string {
+export function buildMergePrompt(input: MergePromptInput): string {
   const customDirection = input.prompt.trim();
   return `PROFESSIONAL E-COMMERCE PRODUCT COMPOSITE.
 Extract the main product from every supplied input image and arrange all of them in one cohesive premium advertising image.

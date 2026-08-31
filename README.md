@@ -8,13 +8,14 @@ The app selects the safest available mode at runtime:
 
 | Environment | Behavior |
 | --- | --- |
-| Google AI Studio project | AI Studio injects that project's `GEMINI_API_KEY` as a server-side secret. The app never shows BYOK controls or accepts a browser key there. |
+| Google AI Studio Preview | Matches the original Stable app by using AI Studio's build-time default connection without showing BYOK controls. |
+| Published/external managed app | Uses the server-side `GEMINI_API_KEY` and never exposes it in a production bundle. |
 | Outside AI Studio without `GEMINI_API_KEY` | The app asks each user for a Gemini API key, verifies it, and keeps it only for the current browser session. |
 | External managed deployment with `GEMINI_API_KEY` | The deployment uses the server-side key and does not ask users for one. |
 
 BYOK keys are held in memory and `sessionStorage`, sent only to same-origin server routes, and never written to source code, the production bundle, `localStorage`, IndexedDB, or logs.
 
-Important: a shared or Cloud Run-deployed AI Studio app uses the app owner's quota for all viewers. To use a different person's automatically managed AI Studio key, that person must copy/import the project into their own AI Studio account. This is a Google AI Studio platform rule, not something client code can override.
+Important: the legacy Preview compatibility path matches the working Stable repository and is limited to non-production AI Studio builds. Published and external builds continue through the server. A shared or Cloud Run-deployed app uses the app owner's quota for all viewers.
 
 ## Run locally
 
@@ -31,8 +32,8 @@ Leave `GEMINI_API_KEY` unset for the default per-user BYOK flow. To test a manag
 
 1. Open Build mode in Google AI Studio.
 2. Choose **Import from GitHub** and select this repository.
-3. AI Studio supplies `GEMINI_API_KEY` to the Node.js server automatically.
-4. Run the app. The runtime detects both AI Studio preview hosts and the managed secret, so the key dialog stays hidden even during a temporary config request failure.
+3. AI Studio Preview supplies its default build-time Gemini connection, matching the Stable app even when the Secrets panel says `No key selected`.
+4. Run the app. No key dialog is shown. Production publishing still requires the server-side managed connection.
 
 OpenAI choices are deliberately hidden in this managed Google mode. Gemini uses the model's native output settings, matching the original AI Studio app; the UI does not send a `1K`/`2K`/`4K` override to Google models.
 

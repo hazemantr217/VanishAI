@@ -7,9 +7,9 @@ const assetFiles = (await readdir(assetsDirectory))
 
 const forbiddenPatterns = [
   'GEMINI_API_KEY',
-  'GoogleGenAI',
-  'generativelanguage.googleapis.com',
-  'x-goog-api-key',
+  // Production mode defines the Preview-only value as empty. A real-looking
+  // Google API key in a production bundle is always a release blocker.
+  'AIzaSy',
 ];
 
 for (const file of assetFiles) {
@@ -21,4 +21,4 @@ for (const file of assetFiles) {
   }
 }
 
-console.log(`Verified ${assetFiles.length} client bundles: no Gemini server credentials or SDK code found.`);
+console.log(`Verified ${assetFiles.length} client bundles: no Gemini credential value found.`);

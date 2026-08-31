@@ -8,6 +8,11 @@ import type {
 import { imageUrlToBlob, imageUrlToDataUrl, toManagedImageUrl } from '../lib/image-urls';
 import { isGeminiModel } from '../shared/models';
 import { isGoogleAIStudioBrowser } from '../shared/ai-studio';
+import {
+  canUseAIStudioPreviewGemini,
+  editWithAIStudioPreview,
+  mergeWithAIStudioPreview,
+} from './gemini-preview';
 
 const SESSION_KEY = 'vanishai_gemini_api_key';
 let inMemoryGeminiApiKey = '';
@@ -120,6 +125,12 @@ export async function requestInpaint(
   signal?: AbortSignal,
 ): Promise<ImageResultResponse> {
   if (isGeminiModel(payload.model)) {
+    if (canUseAIStudioPreviewGemini()) {
+      return {
+        resultImage: await toManagedImageUrl(await editWithAIStudioPreview(payload, signal)),
+        requestId: 'ai-studio-preview',
+      };
+    }
     // Preserve the transport used by the original working AI Studio build.
     // In particular, do not send an image-size field or a custom marker through
     // AI Studio's preview proxy.
@@ -167,6 +178,12 @@ export async function requestBatchMerge(
   payload: MergeBatchRequest,
   signal?: AbortSignal,
 ): Promise<ImageResultResponse> {
+  if (canUseAIStudioPreviewGemini()) {
+    return {
+      resultImage: await toManagedImageUrl(await mergeWithAIStudioPreview(payload, signal)),
+      requestId: 'ai-studio-preview',
+    };
+  }
   const { imageSize: _ignoredImageSize, ...originalPayload } = payload;
   const images = await Promise.all(originalPayload.images.map(imageUrlToDataUrl));
   const response = await apiRequest<ImageResultResponse>('/api/merge-batch', {
