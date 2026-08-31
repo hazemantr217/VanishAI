@@ -8,7 +8,7 @@ The app selects the safest available mode at runtime:
 
 | Environment | Behavior |
 | --- | --- |
-| Google AI Studio project | AI Studio injects that project's `GEMINI_API_KEY` as a server-side secret. No key dialog appears. |
+| Google AI Studio project | AI Studio injects that project's `GEMINI_API_KEY` as a server-side secret. The app never shows BYOK controls or accepts a browser key there. |
 | Outside AI Studio without `GEMINI_API_KEY` | The app asks each user for a Gemini API key, verifies it, and keeps it only for the current browser session. |
 | External managed deployment with `GEMINI_API_KEY` | The deployment uses the server-side key and does not ask users for one. |
 
@@ -32,7 +32,7 @@ Leave `GEMINI_API_KEY` unset for the default per-user BYOK flow. To test a manag
 1. Open Build mode in Google AI Studio.
 2. Choose **Import from GitHub** and select this repository.
 3. AI Studio supplies `GEMINI_API_KEY` to the Node.js server automatically.
-4. Run the app. The runtime-config endpoint detects the managed secret, so the key dialog stays hidden.
+4. Run the app. The runtime detects both AI Studio preview hosts and the managed secret, so the key dialog stays hidden even during a temporary config request failure.
 
 OpenAI choices are deliberately hidden in this managed Google mode. Gemini uses the model's native output settings, matching the original AI Studio app; the UI does not send a `1K`/`2K`/`4K` override to Google models.
 

@@ -2,7 +2,9 @@ import assert from 'node:assert/strict';
 import type { AddressInfo } from 'node:net';
 import test from 'node:test';
 import { createApp } from '../server';
-import { geminiRequestContext } from './api-router';
+
+const TEST_IMAGE = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M/wHwAF/gL+XzSQSQAAAABJRU5ErkJggg==';
+const AI_STUDIO_HOST = 'ais-dev-eve4jfbsmnjwvhnnyfudxb-20643648940.europe-west2.run.app';
 
 async function withTestServer(run: (baseUrl: string) => Promise<void>) {
   const app = await createApp();
@@ -39,29 +41,44 @@ test('health and runtime config expose no credentials', async () => {
   });
 });
 
-test('AI Studio request context forwards only a sanitized HTTP referrer', () => {
-  const request = {
-    header(name: string) {
-      if (name === 'referer') return 'https://preview.example/workspace?token=private#editor';
-      return undefined;
-    },
-  } as unknown as import('express').Request;
-
-  assert.deepEqual(geminiRequestContext(request), {
-    referrer: 'https://preview.example/workspace',
+test('AI Studio runtime is always managed and never advertises BYOK', async () => {
+  await withTestServer(async (baseUrl) => {
+    const response = await fetch(`${baseUrl}/api/runtime-config`, {
+      headers: { 'x-forwarded-host': AI_STUDIO_HOST },
+    });
+    assert.equal(response.status, 200);
+    const config = await response.json() as Record<string, unknown>;
+    assert.equal(config.geminiCredentialMode, 'managed');
+    assert.equal(config.googleOnlyMode, true);
+    assert.equal(config.openaiAvailable, false);
   });
 });
 
-test('invalid request referrers are never forwarded to Gemini', () => {
-  const request = {
-    header(name: string) {
-      if (name === 'referer') return 'javascript:alert(1)';
-      if (name === 'origin') return 'https://user:password@example.com/';
-      return undefined;
-    },
-  } as unknown as import('express').Request;
+test('AI Studio never falls back to a browser key when its managed connection is absent', async () => {
+  await withTestServer(async (baseUrl) => {
+    const response = await fetch(`${baseUrl}/api/inpaint`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'x-forwarded-host': AI_STUDIO_HOST,
+        'x-gemini-api-key': 'stale-browser-key',
+      },
+      body: JSON.stringify({
+        maskedImage: TEST_IMAGE,
+        prompt: '',
+        model: 'gemini-3.1-flash-lite-image',
+        appMode: 'reimagine',
+        aspectRatio: 'original',
+        imageSize: '1K',
+        similarityLevel: 'high',
+      }),
+    });
 
-  assert.deepEqual(geminiRequestContext(request), {});
+    assert.equal(response.status, 503);
+    const payload = await response.json() as { code: string; error: string };
+    assert.equal(payload.code, 'MANAGED_GEMINI_UNAVAILABLE');
+    assert.doesNotMatch(payload.error, /أدخل مفتاح/);
+  });
 });
 
 test('multipart API routes reject cross-origin requests', async () => {

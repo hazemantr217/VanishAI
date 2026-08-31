@@ -4,27 +4,29 @@ import rateLimit from 'express-rate-limit';
 import { RedisStore, type RedisReply } from 'rate-limit-redis';
 import { createClient } from 'redis';
 import { serverConfig } from './config';
-
-const AI_STUDIO_PREVIEW_SUFFIX = '.scf.usercontent.goog';
-const AI_STUDIO_CLOUD_RUN_HOST = /^ais-(?:dev|pre)-[a-z0-9-]+-\d+\.[a-z0-9-]+\.run\.app$/;
-const AI_STUDIO_ORIGINS = new Set([
-  'https://aistudio.google.com',
-  'https://ai.studio',
-]);
+import { isGoogleAIStudioHostname, isGoogleAIStudioUrl } from '../src/shared/ai-studio';
 
 export function isGoogleAIStudioPreviewOrigin(value: string | undefined): boolean {
-  if (!value) return false;
+  return isGoogleAIStudioUrl(value);
+}
+
+function hostnameFromAuthority(value: string | undefined): string {
+  if (!value) return '';
   try {
-    const url = new URL(value);
-    if (url.protocol !== 'https:' || url.port || url.username || url.password) return false;
-    if (AI_STUDIO_ORIGINS.has(url.origin)) return true;
-    return (
-      url.hostname.length > AI_STUDIO_PREVIEW_SUFFIX.length &&
-      url.hostname.endsWith(AI_STUDIO_PREVIEW_SUFFIX)
-    ) || AI_STUDIO_CLOUD_RUN_HOST.test(url.hostname);
+    return new URL(`https://${value.trim()}`).hostname;
   } catch {
-    return false;
+    return '';
   }
+}
+
+export function isGoogleAIStudioRequest(req: Request): boolean {
+  const forwardedHosts = (req.header('x-forwarded-host') || '').split(',');
+  const hostCandidates = [req.header('host'), ...forwardedHosts]
+    .map(hostnameFromAuthority);
+  if (hostCandidates.some(isGoogleAIStudioHostname)) return true;
+
+  return [req.header('origin'), req.header('referer')]
+    .some(isGoogleAIStudioUrl);
 }
 
 export const securityHeaders = helmet({

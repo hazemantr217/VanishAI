@@ -1,8 +1,13 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { requestInpaint } from './api';
+import { requestInpaint, shouldAttachGeminiSessionKey } from './api';
 
 const TEST_IMAGE = 'data:image/png;base64,iVBORw0KGgo=';
+
+test('AI Studio requests never attach a browser session key', () => {
+  assert.equal(shouldAttachGeminiSessionKey(true), false);
+  assert.equal(shouldAttachGeminiSessionKey(false), true);
+});
 
 test('Gemini converts managed blob images to the original JSON data-URL transport', async () => {
   const originalFetch = globalThis.fetch;
@@ -117,6 +122,41 @@ test('preserves a structured Gemini provider 403 response', async () => {
         error.name === 'MODEL_ACCESS_DENIED' &&
         /Google/.test(error.message),
     );
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('does not automatically duplicate a Gemini request after a 429', async () => {
+  const originalFetch = globalThis.fetch;
+  let requestCount = 0;
+  globalThis.fetch = async (input) => {
+    if (String(input) === '/api/inpaint') {
+      requestCount += 1;
+      return new Response(JSON.stringify({
+        error: 'تم تجاوز حصة الاستخدام أو حد سرعة الطلبات.',
+        code: 'QUOTA_EXCEEDED',
+        requestId: 'quota-request',
+      }), {
+        status: 429,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
+    return originalFetch(input);
+  };
+
+  try {
+    await assert.rejects(requestInpaint({
+      originalImage: TEST_IMAGE,
+      maskedImage: TEST_IMAGE,
+      prompt: 'Improve it',
+      model: 'gemini-3.1-flash-lite-image',
+      appMode: 'reimagine',
+      aspectRatio: 'original',
+      imageSize: '1K',
+      similarityLevel: 'high',
+    }));
+    assert.equal(requestCount, 1);
   } finally {
     globalThis.fetch = originalFetch;
   }

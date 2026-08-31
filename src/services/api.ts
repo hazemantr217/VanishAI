@@ -7,6 +7,7 @@ import type {
 } from '../shared/api';
 import { imageUrlToBlob, imageUrlToDataUrl, toManagedImageUrl } from '../lib/image-urls';
 import { isGeminiModel } from '../shared/models';
+import { isGoogleAIStudioBrowser } from '../shared/ai-studio';
 
 const SESSION_KEY = 'vanishai_gemini_api_key';
 let inMemoryGeminiApiKey = '';
@@ -76,47 +77,27 @@ async function parseApiError(response: Response): Promise<Error> {
   return error;
 }
 
-function abortableDelay(milliseconds: number, signal?: AbortSignal): Promise<void> {
-  return new Promise((resolve, reject) => {
-    if (signal?.aborted) {
-      reject(new DOMException('Aborted', 'AbortError'));
-      return;
-    }
-    const timer = window.setTimeout(resolve, milliseconds);
-    signal?.addEventListener('abort', () => {
-      window.clearTimeout(timer);
-      reject(new DOMException('Aborted', 'AbortError'));
-    }, { once: true });
-  });
+export function shouldAttachGeminiSessionKey(aiStudioBrowser = isGoogleAIStudioBrowser()): boolean {
+  return !aiStudioBrowser;
 }
 
 async function apiRequest<T>(
   path: string,
   init: RequestInit,
-  options: { includeGeminiKey?: boolean; retryRateLimit?: boolean; requestMarker?: boolean } = {},
+  options: { includeGeminiKey?: boolean; requestMarker?: boolean } = {},
 ): Promise<T> {
   const headers = new Headers(init.headers);
   headers.set('Accept', 'application/json');
   if (options.requestMarker !== false) headers.set('X-Vanish-Request', '1');
 
-  if (options.includeGeminiKey) {
+  if (options.includeGeminiKey && shouldAttachGeminiSessionKey()) {
     const apiKey = readSessionKey();
     if (apiKey) headers.set('X-Gemini-Api-Key', apiKey);
   }
 
-  for (let attempt = 0; attempt < 2; attempt += 1) {
-    const response = await fetch(path, { ...init, headers });
-    if (response.ok) return response.json() as Promise<T>;
-
-    if (response.status === 429 && options.retryRateLimit && attempt === 0) {
-      const retryAfter = Number.parseInt(response.headers.get('Retry-After') || '1', 10);
-      await abortableDelay(Math.min(10, Math.max(1, retryAfter)) * 1000, init.signal || undefined);
-      continue;
-    }
-    throw await parseApiError(response);
-  }
-
-  throw new Error('فشل الطلب بعد إعادة المحاولة.');
+  const response = await fetch(path, { ...init, headers });
+  if (response.ok) return response.json() as Promise<T>;
+  throw await parseApiError(response);
 }
 
 export async function getRuntimeConfig(signal?: AbortSignal): Promise<RuntimeConfig> {
@@ -158,7 +139,7 @@ export async function requestInpaint(
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(jsonPayload),
       signal,
-    }, { includeGeminiKey: true, retryRateLimit: true, requestMarker: false });
+    }, { includeGeminiKey: true, requestMarker: false });
     return { ...response, resultImage: await toManagedImageUrl(response.resultImage) };
   }
 
@@ -178,7 +159,7 @@ export async function requestInpaint(
     method: 'POST',
     body: formData,
     signal,
-  }, { includeGeminiKey: true, retryRateLimit: true });
+  }, { includeGeminiKey: true });
   return { ...response, resultImage: await toManagedImageUrl(response.resultImage) };
 }
 
@@ -193,7 +174,7 @@ export async function requestBatchMerge(
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ ...originalPayload, images }),
     signal,
-  }, { includeGeminiKey: true, retryRateLimit: true, requestMarker: false });
+  }, { includeGeminiKey: true, requestMarker: false });
   return { ...response, resultImage: await toManagedImageUrl(response.resultImage) };
 }
 

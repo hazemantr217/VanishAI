@@ -6,6 +6,7 @@ import { isOpenAIModel } from '../shared/models';
 import { requestBatchMerge, requestInpaint } from '../services/api';
 import { lockPixelsOutsideMask, toPngImageUrl } from '../lib/images';
 import { mapWithConcurrency } from '../lib/concurrency';
+import { processingErrorMessage } from '../lib/processing-errors';
 
 interface ImageProcessorOptions {
   items: BatchItem[];
@@ -14,6 +15,7 @@ interface ImageProcessorOptions {
   setRuntimeConfigError: (message: string) => void;
   ensureCredentials: () => boolean;
   handleForgetApiKey: () => void;
+  managedGeminiMode: boolean;
   appMode: 'vanish' | 'reimagine';
   selectedModel: ImageModel;
   imageSize: ImageSize;
@@ -35,17 +37,6 @@ function isAbort(error: unknown): boolean {
   return error instanceof Error && (error.name === 'AbortError' || error.message === 'ABORTED');
 }
 
-function processingErrorMessage(error: unknown, merge = false): string {
-  const fallback = merge ? 'حدث خطأ أثناء دمج الصور' : 'حدث خطأ أثناء معالجة الصورة';
-  const message = error instanceof Error ? error.message : fallback;
-  const serialized = `${message} ${
-    typeof error === 'object' && error !== null ? JSON.stringify(error) : String(error)
-  }`.toLowerCase();
-  const quotaError = ['429', 'quota', 'resource_exhausted', 'exceeded'].some((token) => serialized.includes(token));
-  if (!quotaError) return message;
-  return 'تجاوزت حصة Google المتاحة لهذا المفتاح. انتظر تجدد الحصة أو استخدم مفتاحًا آخر.';
-}
-
 export function useImageProcessor(options: ImageProcessorOptions) {
   const {
     items,
@@ -54,6 +45,7 @@ export function useImageProcessor(options: ImageProcessorOptions) {
     setRuntimeConfigError,
     ensureCredentials,
     handleForgetApiKey,
+    managedGeminiMode,
     appMode,
     selectedModel,
     imageSize,
@@ -201,7 +193,7 @@ export function useImageProcessor(options: ImageProcessorOptions) {
       }
       console.error('Inpainting error:', error);
       setItems((previous) => previous.map((candidate) => candidate.id === item.id
-        ? { ...candidate, status: 'error', errorMessage: processingErrorMessage(error) }
+        ? { ...candidate, status: 'error', errorMessage: processingErrorMessage(error, { managedGemini: managedGeminiMode }) }
         : candidate));
     }
   };
@@ -264,7 +256,7 @@ export function useImageProcessor(options: ImageProcessorOptions) {
           }
           console.error('Batch Merge Error:', error);
           setItems((previous) => previous.map((item) => item.id === mergedId
-            ? { ...item, status: 'error', errorMessage: processingErrorMessage(error, true) }
+            ? { ...item, status: 'error', errorMessage: processingErrorMessage(error, { merge: true, managedGemini: managedGeminiMode }) }
             : item));
         }
         return;

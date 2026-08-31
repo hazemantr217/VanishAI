@@ -103,6 +103,7 @@ export default function App() {
     setShowApiKeyDialog,
     hasUserApiKey,
     requiresUserApiKey,
+    managedGeminiMode,
     ensureCredentials,
     handleSaveApiKey,
     handleForgetApiKey,
@@ -167,6 +168,7 @@ export default function App() {
     setRuntimeConfigError,
     ensureCredentials,
     handleForgetApiKey,
+    managedGeminiMode,
     appMode,
     selectedModel,
     imageSize,
@@ -724,12 +726,6 @@ export default function App() {
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
     >
-      <ApiKeyDialog
-        open={showApiKeyDialog}
-        required={Boolean(requiresUserApiKey && !hasUserApiKey)}
-        onClose={() => setShowApiKeyDialog(false)}
-        onSave={handleSaveApiKey}
-      />
       {runtimeConfigError && (
         <div className="fixed left-1/2 top-3 z-[90] -translate-x-1/2 rounded-xl border border-amber-500/30 bg-amber-950/95 px-4 py-2 text-xs text-amber-200 shadow-xl" dir="rtl">
           {runtimeConfigError}
@@ -2039,7 +2035,7 @@ export default function App() {
                   onDelete={handleDeleteItem}
                   onDownload={handleDownload}
                   onStop={handleForceStop}
-                  onManageApiKey={() => setShowApiKeyDialog(true)}
+                  onManageApiKey={requiresUserApiKey ? () => setShowApiKeyDialog(true) : undefined}
                 />
               )}
 
@@ -2158,7 +2154,7 @@ export default function App() {
       />
 
       <ApiKeyDialog
-        open={showApiKeyDialog}
+        open={requiresUserApiKey && showApiKeyDialog}
         required={requiresUserApiKey}
         hasSavedKey={hasUserApiKey}
         onClose={() => setShowApiKeyDialog(false)}

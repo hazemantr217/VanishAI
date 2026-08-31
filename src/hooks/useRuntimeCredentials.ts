@@ -6,23 +6,32 @@ import {
   hasSessionGeminiApiKey,
   setSessionGeminiApiKey,
 } from '../services/api';
+import { isGoogleAIStudioBrowser } from '../shared/ai-studio';
 
 const FALLBACK_RUNTIME_CONFIG: RuntimeConfig = {
-  geminiCredentialMode: 'byok',
-  googleOnlyMode: false,
+  geminiCredentialMode: 'managed',
+  googleOnlyMode: true,
   openaiAvailable: false,
   maxBatchConcurrency: 2,
 };
 
-export function runtimeRequiresUserApiKey(config: RuntimeConfig | null): boolean {
-  return config?.geminiCredentialMode === 'byok';
+export function runtimeRequiresUserApiKey(config: RuntimeConfig | null, aiStudioBrowser = false): boolean {
+  return !aiStudioBrowser && config?.geminiCredentialMode === 'byok';
 }
 
 export function useRuntimeCredentials() {
+  const aiStudioBrowser = isGoogleAIStudioBrowser();
   const [runtimeConfig, setRuntimeConfig] = useState<RuntimeConfig | null>(null);
   const [runtimeConfigError, setRuntimeConfigError] = useState('');
   const [showApiKeyDialog, setShowApiKeyDialog] = useState(false);
-  const [hasUserApiKey, setHasUserApiKey] = useState(() => hasSessionGeminiApiKey());
+  const [hasUserApiKey, setHasUserApiKey] = useState(() => !aiStudioBrowser && hasSessionGeminiApiKey());
+
+  useEffect(() => {
+    if (!aiStudioBrowser) return;
+    clearSessionGeminiApiKey();
+    setHasUserApiKey(false);
+    setShowApiKeyDialog(false);
+  }, [aiStudioBrowser]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -37,7 +46,8 @@ export function useRuntimeCredentials() {
     return () => controller.abort();
   }, []);
 
-  const requiresUserApiKey = runtimeRequiresUserApiKey(runtimeConfig);
+  const requiresUserApiKey = runtimeRequiresUserApiKey(runtimeConfig, aiStudioBrowser);
+  const managedGeminiMode = aiStudioBrowser || runtimeConfig?.geminiCredentialMode === 'managed';
 
   const ensureCredentials = useCallback(() => {
     if (requiresUserApiKey && !hasSessionGeminiApiKey()) {
@@ -67,6 +77,7 @@ export function useRuntimeCredentials() {
     setShowApiKeyDialog,
     hasUserApiKey,
     requiresUserApiKey,
+    managedGeminiMode,
     ensureCredentials,
     handleSaveApiKey,
     handleForgetApiKey,

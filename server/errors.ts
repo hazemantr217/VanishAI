@@ -41,16 +41,27 @@ export function isAccessDeniedError(error: unknown): boolean {
   return /(?:permission.?denied|access.?denied|api key.*referrer)/i.test(value);
 }
 
-export function publicErrorMessage(error: unknown): string {
+export function publicErrorMessage(error: unknown, options: { managedGemini?: boolean } = {}): string {
   if (error instanceof ApiError) return error.message;
   if (isAuthenticationError(error)) {
+    if (options.managedGemini) {
+      return 'رفض Google اتصال Gemini المُدار لهذا المشروع. أعد تشغيل Preview ثم أعد المحاولة.';
+    }
     return 'رفض Google مصادقة مفتاح Gemini. حدّث مفتاح AI Studio أو استخدم مفتاحًا صالحًا خارج المنصة.';
   }
   if (isQuotaError(error)) {
+    if (options.managedGemini) {
+      return 'حصة مشروع AI Studio الحالي غير متاحة الآن. انتظر تجدد الحصة ثم أعد المحاولة.';
+    }
     return 'تم تجاوز حصة الاستخدام أو حد سرعة الطلبات. انتظر قليلًا ثم أعد المحاولة.';
   }
   if (isAccessDeniedError(error)) {
+    if (options.managedGemini) {
+      return 'رفض Google وصول مشروع AI Studio الحالي إلى الموديل المختار.';
+    }
     return 'رفض Google الطلب (403). تحقق من صلاحية المفتاح أو قيود مصدره للموديل المختار؛ هذا الخطأ لا يعني الفوترة تلقائيًا.';
   }
-  return 'فشلت معالجة الصورة. تحقق من المفتاح والموديل ثم أعد المحاولة.';
+  return options.managedGemini
+    ? 'فشلت معالجة الصورة عبر اتصال AI Studio المُدار. أعد المحاولة.'
+    : 'فشلت معالجة الصورة. تحقق من المفتاح والموديل ثم أعد المحاولة.';
 }

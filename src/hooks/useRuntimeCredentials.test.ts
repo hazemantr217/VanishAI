@@ -25,6 +25,10 @@ test('external BYOK mode requires the current user key', () => {
   assert.equal(runtimeRequiresUserApiKey(BYOK_CONFIG), true);
 });
 
+test('AI Studio host overrides a stale BYOK response and never asks for a key', () => {
+  assert.equal(runtimeRequiresUserApiKey(BYOK_CONFIG, true), false);
+});
+
 test('an unknown runtime is not silently treated as managed', () => {
   assert.equal(runtimeRequiresUserApiKey(null), false);
 });

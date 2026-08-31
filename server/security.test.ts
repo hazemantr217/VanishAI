@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { isGoogleAIStudioPreviewOrigin } from './security';
+import { isGoogleAIStudioPreviewOrigin, isGoogleAIStudioRequest } from './security';
 
 test('accepts only HTTPS Google AI Studio preview origins', () => {
   assert.equal(
@@ -36,4 +36,16 @@ test('accepts only HTTPS Google AI Studio preview origins', () => {
   assert.equal(isGoogleAIStudioPreviewOrigin(undefined), false);
   assert.equal(isGoogleAIStudioPreviewOrigin('https://scf.usercontent.goog.attacker.example'), false);
   assert.equal(isGoogleAIStudioPreviewOrigin('https://attacker.example'), false);
+});
+
+test('detects AI Studio from the forwarded application host', () => {
+  const request = {
+    header(name: string) {
+      if (name === 'x-forwarded-host') {
+        return 'ais-pre-qcdoh36buzuzq3gxbgta5j-150397808623.us-east5.run.app';
+      }
+      return undefined;
+    },
+  } as unknown as import('express').Request;
+  assert.equal(isGoogleAIStudioRequest(request), true);
 });

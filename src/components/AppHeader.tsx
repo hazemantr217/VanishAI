@@ -144,20 +144,22 @@ export default function AppHeader({
         {/* Spacer to push Vanish/Batch toggle and tools to the Left in RTL */}
         <div className="hidden flex-1 lg:block" />
 
-        <button
-          type="button"
-          onClick={onManageApiKey}
-          className={cn(
-            secondaryButton,
-            hasUserApiKey
-              ? 'border-emerald-500/30 text-emerald-300 bg-emerald-500/10'
-              : 'border-orange-500/30 text-orange-300 hover:bg-orange-500/10',
-          )}
-          title="إعداد أو تحديث مفتاح Gemini API"
-        >
-          <KeyRound className="h-3.5 w-3.5" />
-          <span className="hidden xl:inline">{hasUserApiKey ? 'مفتاح مخصص متصل' : 'مفتاح API'}</span>
-        </button>
+        {requiresUserApiKey && (
+          <button
+            type="button"
+            onClick={onManageApiKey}
+            className={cn(
+              secondaryButton,
+              hasUserApiKey
+                ? 'border-emerald-500/30 text-emerald-300 bg-emerald-500/10'
+                : 'border-orange-500/30 text-orange-300 hover:bg-orange-500/10',
+            )}
+            title="إعداد أو تحديث مفتاح Gemini API"
+          >
+            <KeyRound className="h-3.5 w-3.5" />
+            <span className="hidden xl:inline">{hasUserApiKey ? 'مفتاح مخصص متصل' : 'مفتاح API'}</span>
+          </button>
+        )}
 
         {/* 4. Vanish / Batch Mode Toggle (Shifted to Left) */}
         <div className="flex rounded-xl border border-white/10 bg-black/40 p-1">

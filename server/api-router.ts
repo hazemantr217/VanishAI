@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import express, { type NextFunction, type Request, type Response } from 'express';
 import { ZodError } from 'zod';
-import { serverConfig, isGoogleManagedRuntime, isOpenAIEnabled, resolveGeminiApiKey, resolveOpenAIApiKey } from './config';
+import { serverConfig, isOpenAIEnabled, resolveGeminiApiKey, resolveOpenAIApiKey } from './config';
 import { ApiError, isAbortError, isAccessDeniedError, isAuthenticationError, isQuotaError, publicErrorMessage } from './errors';
 import { createRequestAbortController } from './request-abort';
 import { inpaintRequestSchema, mergeBatchRequestSchema } from './validation';
@@ -9,36 +9,31 @@ import {
   editWithGemini,
   mergeWithGemini,
   verifyGeminiKey,
-  type GeminiRequestContext,
 } from './providers/gemini';
 import { editWithOpenAI } from './providers/openai';
 import { inpaintBody, inpaintUploadMiddleware, mergeBody, mergeUploadMiddleware } from './multipart';
 import { isGeminiModel, isOpenAIModel } from '../src/shared/models';
+import { isGoogleAIStudioRequest } from './security';
 
 export const apiRouter = express.Router();
 
-export function geminiRequestContext(req: Request): GeminiRequestContext {
-  const forwardedHost = req.header('x-forwarded-host')?.split(',')[0]?.trim();
-  const candidates = [
-    req.header('referer'),
-    req.header('origin'),
-    forwardedHost ? `https://${forwardedHost}/` : undefined,
-  ];
+function geminiApiKeyForRequest(req: Request): string | null {
+  // Never let an old browser/session key override AI Studio's managed secret.
+  if (isGoogleAIStudioRequest(req)) return serverConfig.managedGeminiApiKey;
+  return resolveGeminiApiKey(req);
+}
 
-  for (const candidate of candidates) {
-    if (!candidate || candidate.length > 2_048 || /[\r\n]/.test(candidate)) continue;
-    try {
-      const url = new URL(candidate);
-      if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password) continue;
-      url.search = '';
-      url.hash = '';
-      return { referrer: url.toString() };
-    } catch {
-      // Try the next trusted request-derived candidate.
-    }
+function requireGeminiApiKey(req: Request): string {
+  const apiKey = geminiApiKeyForRequest(req);
+  if (apiKey) return apiKey;
+  if (isGoogleAIStudioRequest(req)) {
+    throw new ApiError(
+      503,
+      'تعذر تهيئة اتصال Gemini المُدار داخل AI Studio. أعد تشغيل Preview ثم أعد مزامنة المشروع.',
+      'MANAGED_GEMINI_UNAVAILABLE',
+    );
   }
-
-  return {};
+  throw new ApiError(401, 'أدخل مفتاح Gemini API للمتابعة.', 'API_KEY_REQUIRED');
 }
 
 apiRouter.use((_req, res, next) => {
@@ -53,25 +48,22 @@ apiRouter.get('/health', (_req, res) => {
   res.json({ status: 'ok' });
 });
 
-apiRouter.get('/runtime-config', (_req, res) => {
+apiRouter.get('/runtime-config', (req, res) => {
+  const aiStudioRuntime = isGoogleAIStudioRequest(req);
+  const managedGemini = Boolean(serverConfig.managedGeminiApiKey) || aiStudioRuntime;
   res.json({
-    geminiCredentialMode: serverConfig.managedGeminiApiKey ? 'managed' : 'byok',
-    googleOnlyMode: isGoogleManagedRuntime(),
-    openaiAvailable: isOpenAIEnabled(),
+    geminiCredentialMode: managedGemini ? 'managed' : 'byok',
+    googleOnlyMode: managedGemini,
+    openaiAvailable: !aiStudioRuntime && isOpenAIEnabled(),
     maxBatchConcurrency: serverConfig.maxBatchConcurrency,
   });
 });
 
 apiRouter.post('/credentials/verify', async (req, res, next) => {
-  const apiKey = resolveGeminiApiKey(req);
-  if (!apiKey) {
-    next(new ApiError(401, 'أدخل مفتاح Gemini API للمتابعة.', 'API_KEY_REQUIRED'));
-    return;
-  }
-
   const requestAbort = createRequestAbortController(req, res);
   try {
-    await verifyGeminiKey(apiKey, requestAbort.signal, geminiRequestContext(req));
+    const apiKey = requireGeminiApiKey(req);
+    await verifyGeminiKey(apiKey, requestAbort.signal);
     if (!res.writableEnded) res.json({ valid: true });
   } catch (error) {
     next(error);
@@ -87,11 +79,8 @@ apiRouter.post('/inpaint', inpaintUploadMiddleware, async (req, res, next) => {
     let resultImage: string;
 
     if (isGeminiModel(input.model)) {
-      const apiKey = resolveGeminiApiKey(req);
-      if (!apiKey) {
-        throw new ApiError(401, 'أدخل مفتاح Gemini API للمتابعة.', 'API_KEY_REQUIRED');
-      }
-      resultImage = await editWithGemini(apiKey, input, requestAbort.signal, geminiRequestContext(req));
+      const apiKey = requireGeminiApiKey(req);
+      resultImage = await editWithGemini(apiKey, input, requestAbort.signal);
     } else if (isOpenAIModel(input.model)) {
       if (!isOpenAIEnabled()) {
         throw new ApiError(400, 'موديلات OpenAI معطلة في وضع Google AI Studio.', 'OPENAI_DISABLED');
@@ -123,12 +112,8 @@ apiRouter.post('/merge-batch', mergeUploadMiddleware, async (req, res, next) => 
       throw new ApiError(400, 'دمج الباتش متاح حاليًا مع موديلات Gemini فقط.', 'UNSUPPORTED_MODEL');
     }
 
-    const apiKey = resolveGeminiApiKey(req);
-    if (!apiKey) {
-      throw new ApiError(401, 'أدخل مفتاح Gemini API للمتابعة.', 'API_KEY_REQUIRED');
-    }
-
-    const resultImage = await mergeWithGemini(apiKey, input, requestAbort.signal, geminiRequestContext(req));
+    const apiKey = requireGeminiApiKey(req);
+    const resultImage = await mergeWithGemini(apiKey, input, requestAbort.signal);
     if (!res.writableEnded) {
       res.json({ resultImage, requestId: res.locals.requestId });
     }
@@ -147,7 +132,7 @@ apiRouter.use((_req, res) => {
   });
 });
 
-apiRouter.use((error: unknown, _req: Request, res: Response, _next: NextFunction) => {
+apiRouter.use((error: unknown, req: Request, res: Response, _next: NextFunction) => {
   if (res.headersSent || res.writableEnded) return;
 
   const requestId = res.locals.requestId as string | undefined;
@@ -194,7 +179,7 @@ apiRouter.use((error: unknown, _req: Request, res: Response, _next: NextFunction
   }
 
   res.status(status).json({
-    error: publicErrorMessage(error),
+    error: publicErrorMessage(error, { managedGemini: isGoogleAIStudioRequest(req) }),
     code,
     requestId,
   });

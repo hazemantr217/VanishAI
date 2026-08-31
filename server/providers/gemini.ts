@@ -11,17 +11,12 @@ type GenerateContentPart =
   | { inlineData: { data: string; mimeType: 'image/png' | 'image/jpeg' | 'image/webp' } }
   | { text: string };
 
-export interface GeminiRequestContext {
-  referrer?: string;
-}
-
-function createClient(apiKey: string, context?: GeminiRequestContext): GoogleGenAI {
+function createClient(apiKey: string): GoogleGenAI {
   return new GoogleGenAI({
     apiKey,
     httpOptions: {
       headers: {
         'User-Agent': 'aistudio-build',
-        ...(context?.referrer ? { Referer: context.referrer } : {}),
       },
     },
   });
@@ -50,9 +45,8 @@ export async function editWithGemini(
   apiKey: string,
   input: InpaintInput,
   signal: AbortSignal,
-  context?: GeminiRequestContext,
 ): Promise<string> {
-  const ai = createClient(apiKey, context);
+  const ai = createClient(apiKey);
   const masked = parseImageDataUrl(input.maskedImage);
 
   const parts: GenerateContentPart[] = [
@@ -80,9 +74,8 @@ export async function mergeWithGemini(
   apiKey: string,
   input: MergeInput,
   signal: AbortSignal,
-  context?: GeminiRequestContext,
 ): Promise<string> {
-  const ai = createClient(apiKey, context);
+  const ai = createClient(apiKey);
   const parts: GenerateContentPart[] = input.images.map((image) => {
     const parsed = parseImageDataUrl(image);
     return {
@@ -107,9 +100,8 @@ export async function mergeWithGemini(
 export async function verifyGeminiKey(
   apiKey: string,
   signal: AbortSignal,
-  context?: GeminiRequestContext,
 ): Promise<void> {
-  const ai = createClient(apiKey, context);
+  const ai = createClient(apiKey);
   await ai.models.get({
     model: 'gemini-3.1-flash-lite-image',
     config: { abortSignal: signal },

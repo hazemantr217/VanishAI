@@ -38,7 +38,7 @@ test('Gemini restores the original AI Studio generateContent request shape', asy
       enableOutpainting: false,
       outpaintPreserve2D: true,
       similarityLevel: 'high',
-    }, new AbortController().signal, { referrer: 'https://preview.example/editor' });
+    }, new AbortController().signal);
 
     const flashResult = await editWithGemini('test-key', {
       originalImage: TEST_IMAGE,
@@ -59,7 +59,7 @@ test('Gemini restores the original AI Studio generateContent request shape', asy
 
     assert.match(requests[0].url, /models\/gemini-3\.1-flash-lite-image:generateContent/);
     assert.equal(requests[0].headers.get('user-agent'), 'aistudio-build');
-    assert.equal(requests[0].headers.get('referer'), 'https://preview.example/editor');
+    assert.equal(requests[0].headers.get('referer'), null, 'match Stable: do not forward browser referrers');
     const liteConfig = requests[0].body.generationConfig as Record<string, unknown>;
     assert.equal(liteConfig.temperature, 0.15);
     assert.equal('imageConfig' in liteConfig, false);
