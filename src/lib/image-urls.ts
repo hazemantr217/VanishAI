@@ -37,7 +37,34 @@ export function imageMimeType(url: string): string | undefined {
   return dataUrlMime || managedImageUrls.get(url);
 }
 
+export function dataUrlToBlobSync(dataUrl: string): Blob {
+  const commaIdx = dataUrl.indexOf(',');
+  if (commaIdx === -1) {
+    throw new Error('Invalid data URL format.');
+  }
+  const header = dataUrl.slice(0, commaIdx);
+  const data = dataUrl.slice(commaIdx + 1);
+  const mimeMatch = header.match(/^data:([^;]+)/);
+  const mimeType自由 = mimeMatch ? mimeMatch[1] : 'image/png';
+
+  if (header.includes(';base64')) {
+    const binaryStr = atob(data);
+    const len = binaryStr.length;
+    const bytes = new Uint8Array(len);
+    for (let i = 0; i < len; i++) {
+      bytes[i] = binaryStr.charCodeAt(i);
+    }
+    return new Blob([bytes], { type: mimeType自由 });
+  } else {
+    const text = decodeURIComponent(data);
+    return new Blob([text], { type: mimeType自由 });
+  }
+}
+
 export async function imageUrlToBlob(url: string): Promise<Blob> {
+  if (url.startsWith('data:')) {
+    return dataUrlToBlobSync(url);
+  }
   const response = await fetch(url);
   if (!response.ok) throw new Error('تعذر قراءة بيانات الصورة.');
   return response.blob();

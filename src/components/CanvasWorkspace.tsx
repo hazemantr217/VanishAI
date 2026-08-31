@@ -133,14 +133,24 @@ function CanvasWorkspace({
     }
 
     const img = new window.Image();
-    if (!imageUrl.startsWith('data:')) {
+    const isRemoteHttp = (imageUrl.startsWith('http://') || imageUrl.startsWith('https://')) &&
+      !imageUrl.startsWith(window.location.origin);
+
+    if (isRemoteHttp) {
       img.crossOrigin = 'anonymous';
     }
-    
+
+    let retried = false;
     img.onload = () => {
       setImage(img);
     };
     img.onerror = (err) => {
+      if (isRemoteHttp && !retried) {
+        retried = true;
+        img.crossOrigin = null;
+        img.src = imageUrl;
+        return;
+      }
       console.error("Canvas image loading failed:", err);
     };
     img.src = imageUrl;

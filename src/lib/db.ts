@@ -1,5 +1,5 @@
 import type { BatchItem } from '../types';
-import { createManagedImageUrl } from './image-urls';
+import { createManagedImageUrl, dataUrlToBlobSync, imageUrlToBlob } from './image-urls';
 
 const DB_NAME = 'VanishAIDatabase';
 const ITEMS_STORE = 'items';
@@ -135,13 +135,6 @@ function openDB(): Promise<IDBDatabase> {
   });
 }
 
-function dataUrlToBlob(dataUrl: string): Promise<Blob> {
-  return fetch(dataUrl).then((response) => {
-    if (!response.ok) throw new Error('Unable to decode image data.');
-    return response.blob();
-  });
-}
-
 async function sha256(blob: Blob): Promise<string> {
   const digest = await crypto.subtle.digest('SHA-256', await blob.arrayBuffer());
   return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0')).join('');
@@ -155,11 +148,18 @@ async function storeImageReference(
   const cachedId = assetIdCache.get(image);
   if (cachedId) return { assetId: cachedId };
 
-  const blob = await dataUrlToBlob(image);
-  const assetId = await sha256(blob);
-  remember(assetIdCache, image, assetId);
-  pendingAssets.set(assetId, { id: assetId, blob, createdAt: Date.now() });
-  return { assetId };
+  try {
+    const blob = image.startsWith('data:')
+      ? dataUrlToBlobSync(image)
+      : await imageUrlToBlob(image);
+    const assetId = await sha256(blob);
+    remember(assetIdCache, image, assetId);
+    pendingAssets.set(assetId, { id: assetId, blob, createdAt: Date.now() });
+    return { assetId };
+  } catch {
+    // If decoding as blob fails or URL is ephemeral, retain the image string safely without breaking session persistence
+    return image;
+  }
 }
 
 async function mapStoredImages(
