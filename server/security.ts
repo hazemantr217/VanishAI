@@ -6,6 +6,7 @@ import { createClient } from 'redis';
 import { serverConfig } from './config';
 
 const AI_STUDIO_PREVIEW_SUFFIX = '.scf.usercontent.goog';
+const AI_STUDIO_CLOUD_RUN_HOST = /^ais-(?:dev|pre)-[a-z0-9-]+-\d+\.[a-z0-9-]+\.run\.app$/;
 const AI_STUDIO_ORIGINS = new Set([
   'https://aistudio.google.com',
   'https://ai.studio',
@@ -17,8 +18,10 @@ export function isGoogleAIStudioPreviewOrigin(value: string | undefined): boolea
     const url = new URL(value);
     if (url.protocol !== 'https:' || url.port || url.username || url.password) return false;
     if (AI_STUDIO_ORIGINS.has(url.origin)) return true;
-    return url.hostname.length > AI_STUDIO_PREVIEW_SUFFIX.length &&
-      url.hostname.endsWith(AI_STUDIO_PREVIEW_SUFFIX);
+    return (
+      url.hostname.length > AI_STUDIO_PREVIEW_SUFFIX.length &&
+      url.hostname.endsWith(AI_STUDIO_PREVIEW_SUFFIX)
+    ) || AI_STUDIO_CLOUD_RUN_HOST.test(url.hostname);
   } catch {
     return false;
   }

@@ -148,6 +148,23 @@ test('Google AI Studio preview JSON passes the origin guard through its proxy', 
   });
 });
 
+test('Google AI Studio Cloud Run preview passes the cross-site proxy guard', async () => {
+  await withTestServer(async (baseUrl) => {
+    const response = await fetch(`${baseUrl}/api/inpaint`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        origin: 'https://ais-dev-eve4jfbsmnjwvhnnyfudxb-20643648940.europe-west2.run.app',
+        'sec-fetch-site': 'cross-site',
+      },
+      body: '{}',
+    });
+
+    assert.equal(response.status, 400);
+    assert.equal((await response.json() as { code: string }).code, 'INVALID_REQUEST');
+  });
+});
+
 test('inpaint validates payloads before calling a provider', async () => {
   await withTestServer(async (baseUrl) => {
     const response = await fetch(`${baseUrl}/api/inpaint`, {
