@@ -36,7 +36,7 @@ test('health and runtime config expose no credentials', async () => {
     assert.equal(config.geminiCredentialMode, 'byok');
     assert.equal(config.googleOnlyMode, false);
     assert.equal(config.openaiAvailable, false);
-    assert.equal(typeof config.maxBatchConcurrency, 'number');
+    assert.equal('maxBatchConcurrency' in config, false);
     assert.equal(JSON.stringify(config).includes('API_KEY'), false);
   });
 });

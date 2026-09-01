@@ -85,6 +85,14 @@ The successful repair restored Stable's direct Preview path while retaining the 
 
 This Preview tradeoff was explicitly selected to match the functioning Stable project. Any proposal to remove it must include a tested alternative that generates successfully in AI Studio without requesting a user key and without routing Preview traffic onto a failing backend quota.
 
+### Batch parallelism
+
+- The upload/workspace limit remains `MAX_BATCH_IMAGES = 100`.
+- Reimagine batch processing intentionally starts every pending image in parallel. There is no fixed two-image concurrency cap.
+- Do not reintroduce `maxBatchConcurrency` in server configuration, runtime configuration, or the client processor unless the owner explicitly requests a new limit.
+- Per-image failures must remain isolated through `PromiseSettledResult`; one failed image must not cancel completed siblings.
+- The recursive multi-image merge pipeline may keep its sequential chunk dependency. That is separate from ordinary image-batch parallelism.
+
 ## 5. Error signatures — diagnose before editing
 
 | Symptom | Most likely regression | What to inspect first |
@@ -158,6 +166,7 @@ High-risk and requires explicit Preview verification:
 - Changing `generateContent` contents/parts structure, sending both original and masked images for normal edits, or adding `imageSize`.
 - Passing managed `blob:` URLs beyond the client request boundary.
 - Retrying provider `429` automatically across a batch; this can multiply quota failures.
+- Reintroducing a fixed two-image batch concurrency limit or silently queuing ordinary Reimagine items.
 
 ## 9. Definition of done
 

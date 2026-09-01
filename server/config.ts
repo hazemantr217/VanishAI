@@ -22,9 +22,6 @@ export const serverConfig = {
     const parsed = Number(process.env.PORT || 3000);
     return Number.isInteger(parsed) && parsed > 0 && parsed <= 65_535 ? parsed : 3000;
   })(),
-  // Stable built-in limits keep AI Studio from treating optional tuning values
-  // as required secrets. Large batches are queued at this concurrency.
-  maxBatchConcurrency: 2,
   requestBodyLimit: '75mb',
 };
 

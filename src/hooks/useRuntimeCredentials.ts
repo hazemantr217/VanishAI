@@ -12,7 +12,6 @@ const FALLBACK_RUNTIME_CONFIG: RuntimeConfig = {
   geminiCredentialMode: 'managed',
   googleOnlyMode: true,
   openaiAvailable: false,
-  maxBatchConcurrency: 2,
 };
 
 export function runtimeRequiresUserApiKey(config: RuntimeConfig | null, aiStudioBrowser = false): boolean {

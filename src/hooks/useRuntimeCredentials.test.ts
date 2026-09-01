@@ -7,14 +7,12 @@ const MANAGED_CONFIG: RuntimeConfig = {
   geminiCredentialMode: 'managed',
   googleOnlyMode: true,
   openaiAvailable: false,
-  maxBatchConcurrency: 2,
 };
 
 const BYOK_CONFIG: RuntimeConfig = {
   geminiCredentialMode: 'byok',
   googleOnlyMode: false,
   openaiAvailable: false,
-  maxBatchConcurrency: 2,
 };
 
 test('AI Studio managed mode never asks the user for a key', () => {

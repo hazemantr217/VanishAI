@@ -165,7 +165,7 @@ export function useImageProcessor(options: ImageProcessorOptions) {
       const count = multiVariant ? (isBatch ? batchVariantsCount : vanishVariantsCount) : 1;
       const results = await mapWithConcurrency(
         Array.from({ length: count }, (_value, index) => index),
-        isBatch ? 1 : Math.min(2, runtimeConfig?.maxBatchConcurrency || 2),
+        count,
         (index) => item.inputImages && item.inputImages.length > 1
           ? generateBatchMerge(item.inputImages, prompt, signal)
           : generateSingleVariant(item, index, signal),
@@ -232,7 +232,7 @@ export function useImageProcessor(options: ImageProcessorOptions) {
           const count = batchEnableMultiVariant ? Math.max(1, batchVariantsCount) : 1;
           const results = await mapWithConcurrency(
             Array.from({ length: count }, (_value, index) => index),
-            runtimeConfig.maxBatchConcurrency,
+            count,
             () => generateBatchMerge(images, prompt, signal),
           );
           if (isAbortedRef.current || signal.aborted) throw new Error('ABORTED');
@@ -267,7 +267,7 @@ export function useImageProcessor(options: ImageProcessorOptions) {
         return appMode === 'reimagine' ? pending : pending && Boolean(item.maskedImage);
       });
       if (appMode === 'reimagine') {
-        await mapWithConcurrency(pendingItems, runtimeConfig.maxBatchConcurrency, processImage);
+        await mapWithConcurrency(pendingItems, pendingItems.length, processImage);
       } else {
         for (const item of pendingItems) {
           if (isAbortedRef.current) break;

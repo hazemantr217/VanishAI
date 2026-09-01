@@ -55,7 +55,6 @@ apiRouter.get('/runtime-config', (req, res) => {
     geminiCredentialMode: managedGemini ? 'managed' : 'byok',
     googleOnlyMode: managedGemini,
     openaiAvailable: !aiStudioRuntime && isOpenAIEnabled(),
-    maxBatchConcurrency: serverConfig.maxBatchConcurrency,
   });
 });
 

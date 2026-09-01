@@ -3,7 +3,7 @@
 > [!IMPORTANT]
 > **Before making any change, read [`AGENTS.md`](./AGENTS.md) completely.** It records the known-good Google AI Studio architecture, the failures that previously caused `401/403/429`, and the mandatory regression checks. Do not refactor Gemini authentication or transport before understanding that contract.
 
-VanishAI is a full-stack React and Node.js image editor for precise object removal, masked edits, outpainting, high-fidelity recreation, and bounded-concurrency batch processing. Google AI Studio Preview intentionally uses a Stable-compatible direct browser Gemini path; published/standalone deployments use the backend provider path.
+VanishAI is a full-stack React and Node.js image editor for precise object removal, masked edits, outpainting, high-fidelity recreation, and parallel batch processing. Google AI Studio Preview intentionally uses a Stable-compatible direct browser Gemini path; published/standalone deployments use the backend provider path.
 
 ## Credential modes
 

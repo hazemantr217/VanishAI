@@ -2015,7 +2015,7 @@ export default function App() {
                   </div>
                   <h4 className="text-base font-bold text-neutral-200 group-hover:text-white transition-colors mb-2 font-sans">قم برفع صور المعالجة الجماعية (Batch)</h4>
                   <p className="text-xs text-neutral-400 max-w-sm leading-relaxed mb-6 font-sans">
-                    ارفع حتى 100 صورة مرة واحدة. تُحفظ الصور كملفات خفيفة في الذاكرة وتدخل طابور معالجة متدرج لمنع تهنيج المتصفح أو استهلاك الحصة دفعة واحدة.
+                    ارفع حتى 100 صورة مرة واحدة. تُحفظ الصور كملفات خفيفة وتبدأ معالجة جميع الصور المعلقة بالتوازي دون حد ثابت بصورتين.
                   </p>
                   <span className="px-4 py-2 bg-orange-500 hover:bg-orange-600 text-white text-xs font-bold rounded-xl shadow-lg shadow-orange-500/10 transition-colors font-sans">
                     اختيار الصور من الجهاز 💻
