@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Upload, Download, Loader2, Settings2, Trash2, X, Pencil, Check, ChevronUp, ChevronDown, StopCircle, Archive, RotateCcw, FileArchive, FolderArchive, Clock, Layers, Save, CheckCircle, Sparkles, RefreshCw, CheckCircle2, AlertCircle } from 'lucide-react';
+import { Upload, Download, Loader2, Settings2, Trash2, X, Pencil, Check, ChevronUp, ChevronDown, StopCircle, Archive, RotateCcw, FileArchive, FolderArchive, Clock, Layers, Save, CheckCircle, Sparkles, RefreshCw, CheckCircle2, AlertCircle, GripVertical } from 'lucide-react';
 import CanvasWorkspace from './components/CanvasWorkspace';
 import CropModal from './components/CropModal';
 import BatchGrid from './components/BatchGrid';
@@ -266,10 +266,77 @@ export default function App() {
     handleSaveEditPreset,
     handleCancelEditPreset,
     handleMovePreset,
+    handleReorderPresets,
     handleAddPreset,
     handleDeletePreset,
     handleResetPresets,
   } = usePresets(prompt, selectedPresetName);
+
+  const [draggedPresetIndex, setDraggedPresetIndex] = useState<number | null>(null);
+  const [dragOverPresetIndex, setDragOverPresetIndex] = useState<number | null>(null);
+  const [activePressingPresetIndex, setActivePressingPresetIndex] = useState<number | null>(null);
+  const presetTouchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const presetTouchStartPosRef = useRef<{ x: number; y: number } | null>(null);
+  const isTouchDraggingPresetRef = useRef<boolean>(false);
+
+  const handlePresetTouchStart = (index: number, e: React.TouchEvent) => {
+    if (isProcessing || editingPresetIndex !== null) return;
+    const touch = e.touches[0];
+    presetTouchStartPosRef.current = { x: touch.clientX, y: touch.clientY };
+    isTouchDraggingPresetRef.current = false;
+
+    presetTouchTimerRef.current = setTimeout(() => {
+      isTouchDraggingPresetRef.current = true;
+      setDraggedPresetIndex(index);
+      setDragOverPresetIndex(index);
+      if (typeof navigator !== 'undefined' && 'vibrate' in navigator) {
+        navigator.vibrate?.(30);
+      }
+    }, 250);
+  };
+
+  const handlePresetTouchMove = (e: React.TouchEvent) => {
+    if (!presetTouchStartPosRef.current) return;
+    const touch = e.touches[0];
+    const dx = touch.clientX - presetTouchStartPosRef.current.x;
+    const dy = touch.clientY - presetTouchStartPosRef.current.y;
+
+    if (!isTouchDraggingPresetRef.current) {
+      if (Math.hypot(dx, dy) > 10) {
+        if (presetTouchTimerRef.current) {
+          clearTimeout(presetTouchTimerRef.current);
+          presetTouchTimerRef.current = null;
+        }
+      }
+      return;
+    }
+
+    e.preventDefault();
+    const element = document.elementFromPoint(touch.clientX, touch.clientY);
+    const presetItem = element?.closest('[data-preset-index]');
+    if (presetItem) {
+      const targetIdx = Number(presetItem.getAttribute('data-preset-index'));
+      if (!Number.isNaN(targetIdx)) {
+        setDragOverPresetIndex(targetIdx);
+      }
+    }
+  };
+
+  const handlePresetTouchEnd = () => {
+    if (presetTouchTimerRef.current) {
+      clearTimeout(presetTouchTimerRef.current);
+      presetTouchTimerRef.current = null;
+    }
+    if (isTouchDraggingPresetRef.current && draggedPresetIndex !== null && dragOverPresetIndex !== null) {
+      if (draggedPresetIndex !== dragOverPresetIndex) {
+        handleReorderPresets(draggedPresetIndex, dragOverPresetIndex);
+      }
+    }
+    isTouchDraggingPresetRef.current = false;
+    presetTouchStartPosRef.current = null;
+    setDraggedPresetIndex(null);
+    setDragOverPresetIndex(null);
+  };
 
   const handleDeleteFromDb = (id: string, e?: React.MouseEvent) => {
     if (e) {
@@ -553,18 +620,28 @@ export default function App() {
   }, [activeItemId]);
 
   const handleDragOver = (e: React.DragEvent) => {
+    // Only accept file drops from outside (OS file system), never in-app element drag-and-drop
+    if (draggedPresetIndex !== null) return;
+    const types = e.dataTransfer?.types;
+    if (!types) return;
+    const typesList = Array.from(types);
+    if (!typesList.includes('Files')) return;
+
     e.preventDefault();
     setIsDragging(true);
   };
 
   const handleDragLeave = (e: React.DragEvent) => {
     e.preventDefault();
-    setIsDragging(false);
+    if (!e.currentTarget.contains(e.relatedTarget as Node)) {
+      setIsDragging(false);
+    }
   };
 
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault();
     setIsDragging(false);
+    if (draggedPresetIndex !== null) return;
     if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
       const files = Array.from(e.dataTransfer.files).filter(file => file.type.startsWith('image/'));
       if (files.length === 0) return;
@@ -1639,11 +1716,26 @@ export default function App() {
                   )}
                 </AnimatePresence>
 
-                <div className="flex flex-col gap-1.5 max-h-48 overflow-y-auto pr-1" style={{ scrollbarWidth: 'thin' }}>
+                <div
+                  className="flex flex-col gap-1.5 max-h-52 overflow-y-auto pr-1 select-none"
+                  style={{ scrollbarWidth: 'thin' }}
+                  onDragOver={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                  }}
+                >
                   {presets.map((p, i) => {
                     const isSelected = activePreset?.name === p.name;
+                    const isDragging = draggedPresetIndex === i;
+                    const isDragOver = dragOverPresetIndex === i && draggedPresetIndex !== i;
+                    const isPressing = activePressingPresetIndex === i;
+
                     return editingPresetIndex === i ? (
-                      <div key={i} className="flex flex-col gap-1.5 p-2 rounded-xl bg-orange-950/50 border border-orange-500/40 w-full font-sans my-1">
+                      <motion.div
+                        layout
+                        key={`editing-${i}`}
+                        className="flex flex-col gap-1.5 p-2 rounded-xl bg-orange-950/50 border border-orange-500/40 w-full font-sans my-1"
+                      >
                         <input
                           type="text"
                           value={editingPresetName}
@@ -1674,17 +1766,99 @@ export default function App() {
                             <span>حفظ التعديل</span>
                           </button>
                         </div>
-                      </div>
+                      </motion.div>
                     ) : (
-                      <div
-                        key={i}
+                      <motion.div
+                        layout
+                        transition={{ type: "spring", stiffness: 350, damping: 25 }}
+                        key={p.name + i}
+                        data-preset-index={i}
+                        draggable={!isProcessing && editingPresetIndex === null}
+                        onMouseDown={(e) => {
+                          if (e.button === 0 && !isProcessing && editingPresetIndex === null) {
+                            setActivePressingPresetIndex(i);
+                          }
+                        }}
+                        onMouseUp={() => setActivePressingPresetIndex(null)}
+                        onMouseLeave={() => {
+                          if (activePressingPresetIndex === i) setActivePressingPresetIndex(null);
+                        }}
+                        onDragStart={(e: any) => {
+                          e.stopPropagation();
+                          setDraggedPresetIndex(i);
+                          setActivePressingPresetIndex(i);
+                          if (e.dataTransfer) {
+                            e.dataTransfer.effectAllowed = 'move';
+                            e.dataTransfer.setData('application/x-preset-index', String(i));
+                            e.dataTransfer.setData('text/plain', String(i));
+                          }
+                        }}
+                        onDragOver={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          e.dataTransfer.dropEffect = 'move';
+                          if (dragOverPresetIndex !== i) setDragOverPresetIndex(i);
+                        }}
+                        onDragLeave={(e) => {
+                          e.stopPropagation();
+                          if (dragOverPresetIndex === i) setDragOverPresetIndex(null);
+                        }}
+                        onDragEnd={(e: any) => {
+                          e.stopPropagation();
+                          setDraggedPresetIndex(null);
+                          setDragOverPresetIndex(null);
+                          setActivePressingPresetIndex(null);
+                        }}
+                        onDrop={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          const source = draggedPresetIndex ?? Number(e.dataTransfer.getData('application/x-preset-index') || e.dataTransfer.getData('text/plain'));
+                          if (!Number.isNaN(source) && source !== i && source >= 0 && source < presets.length) {
+                            handleReorderPresets(source, i);
+                          }
+                          setDraggedPresetIndex(null);
+                          setDragOverPresetIndex(null);
+                          setActivePressingPresetIndex(null);
+                        }}
+                        onTouchStart={(e) => {
+                          setActivePressingPresetIndex(i);
+                          handlePresetTouchStart(i, e);
+                        }}
+                        onTouchMove={handlePresetTouchMove}
+                        onTouchEnd={() => {
+                          setActivePressingPresetIndex(null);
+                          handlePresetTouchEnd();
+                        }}
+                        onTouchCancel={() => {
+                          setActivePressingPresetIndex(null);
+                          handlePresetTouchEnd();
+                        }}
                         className={cn(
-                          "group relative flex items-center justify-between rounded-xl border transition-all w-full pl-2 pr-3.5 py-1.5 font-sans",
-                          isSelected
-                            ? "bg-orange-500/20 border-orange-500/60 shadow-sm shadow-orange-500/10"
-                            : "bg-neutral-800/40 hover:bg-orange-500/10 border-white/5 hover:border-orange-500/20"
+                          "group relative flex items-center justify-between rounded-xl border transition-all duration-200 w-full pl-2 pr-2 py-1.5 font-sans select-none",
+                          isDragging || isPressing ? "cursor-grabbing" : "cursor-grab",
+                          isDragging && "shadow-[0_16px_32px_-4px_rgba(0,0,0,0.95),0_0_24px_rgba(249,115,22,0.4)] bg-neutral-900/95 border-orange-500 ring-2 ring-orange-500/70 scale-[1.03] z-30 opacity-90 backdrop-blur-md",
+                          !isDragging && isPressing && "shadow-xl shadow-black/80 bg-neutral-850 border-orange-500/60 scale-[1.01] z-20",
+                          !isDragging && !isPressing && isDragOver && "ring-2 ring-orange-500 border-orange-400 bg-orange-500/25 scale-[1.01] transition-transform",
+                          !isDragging && !isPressing && !isDragOver && (
+                            isSelected
+                              ? "bg-orange-500/20 border-orange-500/60 shadow-sm shadow-orange-500/10"
+                              : "bg-neutral-800/40 hover:bg-orange-500/10 border-white/5 hover:border-orange-500/20"
+                          )
                         )}
                       >
+                        {/* Drag Handle (::: icon) */}
+                        <div
+                          className={cn(
+                            "p-1 -mr-0.5 transition-all duration-150 shrink-0 flex items-center rounded-md",
+                            isDragging || isPressing
+                              ? "text-orange-400 cursor-grabbing scale-110 bg-orange-500/10"
+                              : "text-neutral-500 group-hover:text-orange-400 cursor-grab active:cursor-grabbing hover:bg-white/5"
+                          )}
+                          title="اسحب لتغيير الترتيب (أو اضغط مطولاً)"
+                        >
+                          <GripVertical className="w-4 h-4" />
+                        </div>
+
                         <button
                           type="button"
                           disabled={isProcessing}
@@ -1692,7 +1866,10 @@ export default function App() {
                             setPrompt(p.prompt);
                             setSelectedPresetName(p.name);
                           }}
-                          className="flex-1 text-right text-xs text-neutral-200 hover:text-orange-200 font-bold cursor-pointer min-w-0 disabled:opacity-50 flex items-center gap-1.5 justify-start"
+                          className={cn(
+                            "flex-1 text-right text-xs text-neutral-200 hover:text-orange-200 font-bold min-w-0 disabled:opacity-50 flex items-center gap-1.5 justify-start px-1 transition-colors",
+                            isDragging || isPressing ? "cursor-grabbing" : "cursor-pointer"
+                          )}
                           title="تطبيق نص البرومبت مع الاحتفاظ بالأبعاد المحددة"
                         >
                           {isSelected && <span className="text-orange-400 font-black text-xs shrink-0">✓</span>}
@@ -1741,7 +1918,7 @@ export default function App() {
                             <Trash2 className="w-3 h-3" />
                           </button>
                         </div>
-                      </div>
+                      </motion.div>
                     );
                   })}
                 </div>

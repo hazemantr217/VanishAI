@@ -93,6 +93,25 @@ export function usePresets(prompt: string, selectedPresetName: string | null) {
     });
   }, []);
 
+  const handleReorderPresets = useCallback((sourceIndex: number, targetIndex: number) => {
+    if (sourceIndex === targetIndex) return;
+    setPresets((previous) => {
+      if (
+        sourceIndex < 0 ||
+        sourceIndex >= previous.length ||
+        targetIndex < 0 ||
+        targetIndex >= previous.length
+      ) {
+        return previous;
+      }
+      const updated = [...previous];
+      const [movedItem] = updated.splice(sourceIndex, 1);
+      updated.splice(targetIndex, 0, movedItem);
+      persistPresets(updated);
+      return updated;
+    });
+  }, []);
+
   const handleAddPreset = useCallback((name: string, promptText: string) => {
     if (!name.trim() || !promptText.trim()) return;
     setPresets((previous) => {
@@ -144,6 +163,7 @@ export function usePresets(prompt: string, selectedPresetName: string | null) {
     handleSaveEditPreset,
     handleCancelEditPreset,
     handleMovePreset,
+    handleReorderPresets,
     handleAddPreset,
     handleDeletePreset,
     handleResetPresets,
