@@ -10,12 +10,14 @@ import ApiKeyDialog from './components/ApiKeyDialog';
 import ArchiveSidebar from './components/ArchiveSidebar';
 import AppHeader from './components/AppHeader';
 import VanishToolbar from './components/VanishToolbar';
+import ConfirmModal from './components/ConfirmModal';
 import { cn } from './lib/utils';
 import { v4 as uuidv4 } from 'uuid';
 import type { BatchItem } from './types';
 import type { AspectRatio, ImageModel, ImageSize } from './shared/models';
 import { GEMINI_IMAGE_MODELS, isOpenAIModel, isSupportedAspectRatio, supportsImageSize } from './shared/models';
 import { filesToBatchItems, filenameForDataUrl, MAX_BATCH_IMAGES } from './lib/images';
+import { dataUrlToBlobSync, imageUrlToBlob } from './lib/image-urls';
 import { acceptItemResult, applyImageEdit, redoItem, undoItem } from './lib/items';
 import { useManagedImageLifecycle } from './hooks/useManagedImageLifecycle';
 import { useRuntimeCredentials } from './hooks/useRuntimeCredentials';
@@ -133,6 +135,32 @@ export default function App() {
   }, [aspectRatio]);
   const [showSidebar, setShowSidebar] = useState(true);
   const [archiveTab, setArchiveTab] = useState<'sessions' | 'images'>('sessions');
+  const [confirmModal, setConfirmModal] = useState<{
+    isOpen: boolean;
+    title: string;
+    message: string;
+    confirmLabel?: string;
+    cancelLabel?: string;
+    variant?: 'danger' | 'warning' | 'info';
+    isAlert?: boolean;
+    onConfirm: () => void;
+  } | null>(null);
+
+  const closeConfirmModal = useCallback(() => {
+    setConfirmModal(null);
+  }, []);
+
+  const showAlertModal = useCallback((title: string, message: string) => {
+    setConfirmModal({
+      isOpen: true,
+      title,
+      message,
+      isAlert: true,
+      confirmLabel: 'حسناً',
+      variant: 'info',
+      onConfirm: () => setConfirmModal(null),
+    });
+  }, []);
   const [currentSessionId, setCurrentSessionId] = useState<string>(() => 'session_' + Date.now());
   const currentSessionCreatedAtRef = useRef<number>(Date.now());
   const { dbItems, setDbItems, sessions, setSessions } = usePersistentWorkspace(
@@ -350,7 +378,7 @@ export default function App() {
     // Check if it's already in items to avoid duplicates
     if (!items.some(i => i.id === item.id)) {
       if (items.length >= MAX_BATCH_IMAGES) {
-        window.alert(`مساحة العمل تحتوي بالفعل على ${MAX_BATCH_IMAGES} صورة. احذف صورة أولًا.`);
+        showAlertModal('الحد الأقصى للدفعة', `مساحة العمل تحتوي بالفعل على ${MAX_BATCH_IMAGES} صورة. احذف صورة أولًا.`);
         return;
       }
       setItems(prev => [item, ...prev]);
@@ -375,10 +403,21 @@ export default function App() {
   };
 
   // Clear all images from the archive database
-  const handleClearAllArchiveImages = async () => {
-    if (!window.confirm('هل تريد حذف كل الصور من المكتبة؟ لن تُحذف الصور المفتوحة حاليًا من مساحة العمل.')) return;
-    setDbItems([]);
-    await clearDatabase();
+  const handleClearAllArchiveImages = () => {
+    if (dbItems.length === 0) return;
+    setConfirmModal({
+      isOpen: true,
+      title: 'تفريغ مكتبة الصور',
+      message: 'هل تريد حذف كل الصور من المكتبة؟ لن تُحذف الصور المفتوحة حاليًا من مساحة العمل.',
+      confirmLabel: 'تفريغ المكتبة',
+      cancelLabel: 'إلغاء',
+      variant: 'danger',
+      onConfirm: async () => {
+        setConfirmModal(null);
+        setDbItems([]);
+        await clearDatabase();
+      },
+    });
   };
 
   // Restore a specific saved work session
@@ -393,27 +432,48 @@ export default function App() {
   };
 
   // Delete a specific work session manually
-  const handleDeleteSession = async (sessionId: string, e?: React.MouseEvent) => {
+  const handleDeleteSession = (sessionId: string, e?: React.MouseEvent) => {
     if (e) {
       e.preventDefault();
       e.stopPropagation();
     }
-    if (!window.confirm('حذف نقطة الرجوع هذه نهائيًا؟')) return;
-    await deleteWorkSession(sessionId);
-    setSessions(prev => prev.filter(s => s.id !== sessionId));
-    if (sessionId === currentSessionId) {
-      setCurrentSessionId('session_' + Date.now());
-      currentSessionCreatedAtRef.current = Date.now();
-    }
+    setConfirmModal({
+      isOpen: true,
+      title: 'حذف نقطة الرجوع',
+      message: 'هل تريد حذف نقطة الرجوع هذه نهائيًا؟',
+      confirmLabel: 'حذف الجلسة',
+      cancelLabel: 'إلغاء',
+      variant: 'danger',
+      onConfirm: async () => {
+        setConfirmModal(null);
+        await deleteWorkSession(sessionId);
+        setSessions(prev => prev.filter(s => s.id !== sessionId));
+        if (sessionId === currentSessionId) {
+          setCurrentSessionId('session_' + Date.now());
+          currentSessionCreatedAtRef.current = Date.now();
+        }
+      },
+    });
   };
 
   // Clear all saved sessions manually
-  const handleClearAllSessions = async () => {
-    if (!window.confirm('هل تريد حذف كل جلسات الرجوع المحفوظة؟ الصور الموجودة في مساحة العمل لن تتأثر.')) return;
-    await clearAllWorkSessions();
-    setSessions([]);
-    setCurrentSessionId('session_' + Date.now());
-    currentSessionCreatedAtRef.current = Date.now();
+  const handleClearAllSessions = () => {
+    if (sessions.length === 0) return;
+    setConfirmModal({
+      isOpen: true,
+      title: 'مسح جميع الجلسات',
+      message: 'هل تريد حذف كل جلسات الرجوع المحفوظة؟ الصور الموجودة في مساحة العمل لن تتأثر.',
+      confirmLabel: 'مسح الجلسات',
+      cancelLabel: 'إلغاء',
+      variant: 'danger',
+      onConfirm: async () => {
+        setConfirmModal(null);
+        await clearAllWorkSessions();
+        setSessions([]);
+        setCurrentSessionId('session_' + Date.now());
+        currentSessionCreatedAtRef.current = Date.now();
+      },
+    });
   };
 
   // Create a fresh new work session checkpoint
@@ -448,7 +508,7 @@ export default function App() {
   const addImageFiles = useCallback(async (files: File[]) => {
     const availableSlots = Math.max(0, MAX_BATCH_IMAGES - batchItemCountRef.current);
     if (availableSlots === 0) {
-      window.alert(`الدفعة الحالية وصلت للحد الأقصى: ${MAX_BATCH_IMAGES} صورة.`);
+      showAlertModal('الحد الأقصى للدفعة', `الدفعة الحالية وصلت للحد الأقصى: ${MAX_BATCH_IMAGES} صورة.`);
       return;
     }
 
@@ -467,9 +527,9 @@ export default function App() {
         failedFiles.length > 0 ? `تعذر تحميل ${failedFiles.length} ملف غير مدعوم أو أكبر من 45MB.` : '',
         skippedForCapacity > 0 ? `تم تجاوز ${skippedForCapacity} ملف لأن الحد الأقصى للدفعة ${MAX_BATCH_IMAGES} صورة.` : '',
       ].filter(Boolean);
-      window.alert(parts.join('\n'));
+      showAlertModal('تنبيه إضافة الملفات', parts.join('\n'));
     }
-  }, []);
+  }, [showAlertModal]);
 
   useEffect(() => {
     const handlePaste = (e: ClipboardEvent) => {
@@ -684,6 +744,22 @@ export default function App() {
   };
 
   const handleDownload = useCallback((dataUrl: string, filename: string) => {
+    try {
+      if (dataUrl.startsWith('data:')) {
+        const blob = dataUrlToBlobSync(dataUrl);
+        const objectUrl = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = objectUrl;
+        link.download = filenameForDataUrl(filename, dataUrl);
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        setTimeout(() => URL.revokeObjectURL(objectUrl), 10000);
+        return;
+      }
+    } catch (e) {
+      console.warn('Fallback download:', e);
+    }
     const link = document.createElement('a');
     link.href = dataUrl;
     link.download = filenameForDataUrl(filename, dataUrl);
@@ -724,9 +800,7 @@ export default function App() {
         const imageUrl = item.resultImage || item.originalImage;
         
         try {
-          const resp = await fetch(imageUrl);
-          if (!resp.ok) throw new Error('Unable to read image');
-          const blob = await resp.blob();
+          const blob = await imageUrlToBlob(imageUrl);
           const buffer = await blob.arrayBuffer();
           const ext = blob.type.includes('png') ? 'png' : blob.type.includes('webp') ? 'webp' : 'jpg';
           const fileName = `vanishai_image_${i + 1}_${item.id.slice(0, 6)}.${ext}`;
@@ -759,7 +833,7 @@ export default function App() {
       URL.revokeObjectURL(url);
     } catch (error) {
       console.error("ZIP Generation error:", error);
-      alert("حدث خطأ أثناء تجميع ملف الـ ZIP. يمكنك استخدام خيار التحميل التتابعي الفردي.");
+      showAlertModal("خطأ في التحميل", "حدث خطأ أثناء تجميع ملف الـ ZIP. يمكنك استخدام خيار التحميل التتابعي الفردي.");
     } finally {
       setIsZipDownloading(false);
       setZipProgress(0);
@@ -767,33 +841,63 @@ export default function App() {
   };
 
   const handleUndoAllBatch = () => {
-    if (!window.confirm('هل تريد التراجع عن كل نتائج وتعديلات الدفعة وإعادتها للصور الأصلية؟')) return;
-    // Revert all modified items to their original initial state
-    setItems(prev => prev.map(item => {
-      const initial = item.initialImage || (item.editHistory && item.editHistory.length > 0 ? item.editHistory[0] : item.originalImage);
-      return {
-        ...item,
-        originalImage: initial,
-        initialImage: initial,
-        resultImage: null,
-        maskedImage: null,
-        dalleMaskImage: null,
-        maskOverlayImage: null,
-        editHistory: [],
-        redoEditHistory: [],
-        variants: undefined,
-        activeVariantIndex: undefined,
-        status: 'pending',
-        errorMessage: undefined
-      };
-    }));
-    setClearTrigger(c => c + 1);
+    const modifiedCount = items.filter(i => 
+      !!i.resultImage || 
+      (i.editHistory && i.editHistory.length > 0) || 
+      (i.initialImage && i.initialImage !== i.originalImage) || 
+      !!i.maskedImage ||
+      i.status !== 'pending'
+    ).length;
+    if (modifiedCount === 0) return;
+
+    setConfirmModal({
+      isOpen: true,
+      title: 'التراجع عن كل التعديلات',
+      message: `هل تريد التراجع عن كل نتائج وتعديلات الدفعة (${modifiedCount} صورة) وإعادتها للحالة الأصلية الأولى؟`,
+      confirmLabel: 'تراجع عن الكل',
+      cancelLabel: 'إلغاء',
+      variant: 'warning',
+      onConfirm: () => {
+        setConfirmModal(null);
+        // Revert all modified items to their original initial state
+        setItems(prev => prev.map(item => {
+          const initial = item.initialImage || (item.editHistory && item.editHistory.length > 0 ? item.editHistory[0] : item.originalImage);
+          return {
+            ...item,
+            originalImage: initial,
+            initialImage: initial,
+            resultImage: null,
+            maskedImage: null,
+            dalleMaskImage: null,
+            maskOverlayImage: null,
+            editHistory: [],
+            redoEditHistory: [],
+            variants: undefined,
+            activeVariantIndex: undefined,
+            status: 'pending',
+            errorMessage: undefined
+          };
+        }));
+        setClearTrigger(c => c + 1);
+      }
+    });
   };
 
   const clearAllBatch = () => {
-    if (items.length > 0 && !window.confirm(`حذف كل صور الدفعة الحالية (${items.length}) من مساحة العمل؟`)) return;
-    setItems([]);
-    setActiveItemId(null);
+    if (items.length === 0) return;
+    setConfirmModal({
+      isOpen: true,
+      title: 'تفريغ الدفعة بالكامل',
+      message: `هل تريد حذف كل صور الدفعة الحالية (${items.length} صورة) من مساحة العمل؟ لن يؤثر هذا على الصور المحفوظة في الأرشيف.`,
+      confirmLabel: 'حذف الدفعة',
+      cancelLabel: 'إلغاء',
+      variant: 'danger',
+      onConfirm: () => {
+        setConfirmModal(null);
+        setItems([]);
+        setActiveItemId(null);
+      }
+    });
   };
 
   return (
@@ -1675,7 +1779,20 @@ export default function App() {
                     <button
                       type="button"
                       disabled={isProcessing}
-                      onClick={handleResetPresets}
+                      onClick={() => {
+                        setConfirmModal({
+                          isOpen: true,
+                          title: 'استعادة الأنماط الافتراضية',
+                          message: 'سيتم استعادة البرومبتات والأنماط الافتراضية مع الاحتفاظ بكل الأنماط المخصصة التي أضفتها. هل تريد المتابعة؟',
+                          confirmLabel: 'استعادة الافتراضي',
+                          cancelLabel: 'إلغاء',
+                          variant: 'warning',
+                          onConfirm: () => {
+                            setConfirmModal(null);
+                            handleResetPresets();
+                          },
+                        });
+                      }}
                       className="text-[10px] text-neutral-500 hover:text-red-400 transition-colors cursor-pointer disabled:opacity-50"
                       title="استعادة الافتراضي"
                     >
@@ -2172,11 +2289,11 @@ export default function App() {
                     type="button"
                     onClick={clearAllBatch}
                     disabled={isProcessing || items.length === 0}
-                    className="p-2 bg-red-500/15 hover:bg-red-600 hover:text-white disabled:opacity-40 text-red-400 rounded-xl transition-all border border-red-500/30 cursor-pointer flex items-center justify-center gap-1.5 w-full sm:w-auto text-xs font-bold shrink-0"
+                    className="group px-3.5 py-2 bg-red-500/15 hover:bg-red-600 hover:text-white disabled:opacity-30 disabled:cursor-not-allowed disabled:hover:bg-red-500/15 disabled:hover:text-red-400 text-red-400 rounded-xl transition-all border border-red-500/30 cursor-pointer flex items-center justify-center gap-1.5 w-full sm:w-auto text-xs font-bold shrink-0 active:scale-95 shadow-sm"
                     title="تفريغ قائمة الباتش بالكامل"
                   >
-                    <Trash2 className="w-4 h-4 shrink-0 text-red-400 group-hover:text-white" />
-                    <span className="sm:hidden">تفريغ الدفعة</span>
+                    <Trash2 className="w-3.5 h-3.5 shrink-0 text-red-400 group-hover:text-white transition-colors" />
+                    <span>تفريغ الدفعة {items.length > 0 ? `(${items.length})` : ''}</span>
                   </button>
                 </div>
               </div>
@@ -2338,6 +2455,20 @@ export default function App() {
         onSave={handleSaveApiKey}
         onForget={handleForgetApiKey}
       />
+
+      {confirmModal && (
+        <ConfirmModal
+          isOpen={confirmModal.isOpen}
+          title={confirmModal.title}
+          message={confirmModal.message}
+          confirmLabel={confirmModal.confirmLabel}
+          cancelLabel={confirmModal.cancelLabel}
+          variant={confirmModal.variant}
+          isAlert={confirmModal.isAlert}
+          onConfirm={confirmModal.onConfirm}
+          onCancel={closeConfirmModal}
+        />
+      )}
     </div>
   );
 }

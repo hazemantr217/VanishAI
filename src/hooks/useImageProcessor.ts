@@ -205,7 +205,7 @@ export function useImageProcessor(options: ImageProcessorOptions) {
     }
     if (!ensureCredentials()) return;
     if (enableBatchMerge && isOpenAIModel(selectedModel)) {
-      window.alert('دمج صور الباتش متاح حاليًا مع موديلات Gemini فقط.');
+      setRuntimeConfigError('دمج صور الباتش متاح حاليًا مع موديلات Gemini فقط.');
       return;
     }
 

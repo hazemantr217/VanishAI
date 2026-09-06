@@ -134,7 +134,6 @@ export function usePresets(prompt: string, selectedPresetName: string | null) {
   }, [editingPresetIndex, handleCancelEditPreset]);
 
   const handleResetPresets = useCallback(() => {
-    if (!window.confirm('سيتم استعادة البرومبتات الافتراضية مع الاحتفاظ بكل البرومبتات المخصصة. هل تريد المتابعة؟')) return;
     setPresets((previous) => {
       const customPresets = previous.filter((preset) => preset.isCustom);
       const restored = [...DEFAULT_PRESETS, ...customPresets];

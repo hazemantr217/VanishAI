@@ -81,6 +81,17 @@ function BatchCard({
               بانتظار البدء 🕒
             </span>
           )}
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              onDelete();
+            }}
+            className="p-1 rounded-lg text-neutral-400 hover:text-red-400 hover:bg-red-500/10 transition-colors cursor-pointer border border-transparent hover:border-red-500/20"
+            title="حذف هذه الصورة من مساحة العمل"
+          >
+            <Trash2 className="w-3.5 h-3.5" />
+          </button>
         </div>
       </div>
 
@@ -365,6 +376,17 @@ function BatchCard({
                 <span className="whitespace-nowrap truncate">تعديل يدوي</span>
               </button>
             </div>
+
+            {/* Row 3: Delete from batch */}
+            <button
+              type="button"
+              onClick={onDelete}
+              className="py-1 px-2 rounded-lg bg-red-500/10 hover:bg-red-500 hover:text-white text-red-400 text-[10px] font-bold border border-red-500/20 transition-all flex items-center justify-center gap-1 cursor-pointer active:scale-95"
+              title="حذف هذه الصورة من الدفعة"
+            >
+              <Trash2 className="w-3 h-3 shrink-0" />
+              <span>حذف من الدفعة</span>
+            </button>
           </div>
         )}
 
