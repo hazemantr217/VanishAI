@@ -53,6 +53,7 @@ export async function filesToBatchItems(
     const imageUrl = createManagedImageUrl(file);
     return {
       id: createId(),
+      fileName: file.name,
       initialImage: imageUrl,
       originalImage: imageUrl,
       editHistory: [],
