@@ -47,6 +47,16 @@ function BatchGrid({
   onProcessSingle,
   isProcessing = false,
 }: BatchGridProps) {
+  const toggleDisabled = (id: string) => {
+    if (onToggleDisabled) {
+      onToggleDisabled(id);
+      return;
+    }
+    setItems((previous) => previous.map((item) => item.id === id
+      ? { ...item, disabled: !item.disabled }
+      : item));
+  };
+
   return (
     <div className="grid grid-cols-1 gap-4 pb-12 sm:grid-cols-2 sm:gap-6 xl:grid-cols-3">
       {items.map((item, index) => (
@@ -79,10 +89,10 @@ function BatchGrid({
                   تشغيل فقط
                 </button>
               )}
-              {onToggleDisabled && item.status !== 'processing' && (
+              {item.status !== 'processing' && (
                 <button
                   type="button"
-                  onClick={() => onToggleDisabled(item.id)}
+                  onClick={() => toggleDisabled(item.id)}
                   className={item.disabled
                     ? 'flex items-center gap-1 rounded-lg border border-amber-500/30 bg-amber-500/15 px-2 py-1 text-[9px] font-bold text-amber-300 transition hover:bg-amber-500/25'
                     : 'flex items-center gap-1 rounded-lg border border-white/10 bg-white/5 px-2 py-1 text-[9px] font-bold text-neutral-400 transition hover:bg-white/10 hover:text-white'}
