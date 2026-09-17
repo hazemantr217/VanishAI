@@ -215,7 +215,10 @@ export function useImageProcessor(options: ImageProcessorOptions) {
     setIsProcessing(true);
     try {
       if (appMode === 'reimagine' && enableBatchMerge) {
-        const images = items.map((item) => item.originalImage || item.maskedImage).filter(Boolean) as string[];
+        const images = items
+          .filter((item) => !item.disabled)
+          .map((item) => item.originalImage || item.maskedImage)
+          .filter(Boolean) as string[];
         if (images.length === 0) return;
         const mergedId = `merged-${Date.now()}`;
         setItems((previous) => [{
@@ -263,9 +266,11 @@ export function useImageProcessor(options: ImageProcessorOptions) {
       }
 
       const pendingItems = items.filter((item) => {
+        if (item.disabled) return false;
         const pending = item.status === 'pending' || item.status === 'error';
         return appMode === 'reimagine' ? pending : pending && Boolean(item.maskedImage);
       });
+      if (pendingItems.length === 0) return;
       if (appMode === 'reimagine') {
         await mapWithConcurrency(pendingItems, pendingItems.length, processImage);
       } else {
