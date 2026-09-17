@@ -1,5 +1,7 @@
 export interface BatchItem {
   id: string;
+  fileName?: string;
+  disabled?: boolean;
   initialImage: string;
   originalImage: string;
   editHistory: string[];

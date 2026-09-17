@@ -20,6 +20,18 @@ BYOK keys are held in memory and `sessionStorage`, sent only to same-origin serv
 
 Important: the legacy Preview compatibility path matches the working Stable repository and is limited to non-production AI Studio builds. Published and external builds continue through the server. A shared or Cloud Run-deployed app uses the app owner's quota for all viewers.
 
+### Browser sign-in note
+
+A normal web page must not read or replay Google/Gemini browser session cookies. If a future standalone sign-in mode is added, it must use a supported Google OAuth/API flow and keep the AI Studio Preview compatibility path unchanged. Do not copy the Photoshop local-plugin cookie transport into this web application.
+
+## Batch workflow
+
+- Up to `100` uploaded images remain supported.
+- Reimagine starts all active pending items in parallel; there is no fixed two-image concurrency cap.
+- Each batch item preserves its original upload filename for easier identification and individual downloads.
+- Any item can be **excluded** from bulk generation without deleting it. Excluded images remain visible and downloadable, but bulk Reimagine and batch-merge operations skip them.
+- Per-item controls live above each batch card so exclusion does not alter the image itself.
+
 ## Run locally
 
 Requirements: Node.js 20 or newer and npm.
